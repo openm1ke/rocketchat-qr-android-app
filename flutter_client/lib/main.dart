@@ -41,6 +41,7 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
   String? _token;
   Uint8List? _image;
   DateTime? _expires;
+  DateTime? _expiresOn;
   Timer? _expiryTimer;
   String? _error;
   bool _loading = true;
@@ -116,6 +117,7 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
       _token = token;
       _image = null;
       _expires = null;
+      _expiresOn = null;
       _editing = false;
       _loading = false;
     });
@@ -127,6 +129,7 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
     setState(() {
       _image = null;
       _expires = null;
+      _expiresOn = null;
     });
   }
 
@@ -138,8 +141,9 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
       _error = null;
     });
     try {
-      final image = await _client.requestPass(token);
-      final expires = DateTime.now().add(_lifetime);
+      final pass = await _client.requestPass(token);
+      final image = pass.image;
+      final expires = pass.expiresOn ?? DateTime.now().add(_lifetime);
       final codec = await ui.instantiateImageCodec(image);
       try {
         final frame = await codec.getNextFrame();
@@ -157,6 +161,7 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
       setState(() {
         _image = image;
         _expires = expires;
+        _expiresOn = pass.expiresOn;
       });
       _expiryTimer = Timer(remaining, _expire);
     } on PassException catch (failure) {
@@ -272,6 +277,14 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
                         'Получите новый код перед проходом.',
                         textAlign: TextAlign.center,
                       ),
+                    if (_expiresOn case final date?) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'Срок действия до ${date.day.toString().padLeft(2, '0')}.'
+                        '${date.month.toString().padLeft(2, '0')}.${date.year}',
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                     if (_token != null) ...[
                       const SizedBox(height: 16),
                       FilledButton(

@@ -98,11 +98,28 @@ void main() {
                       },
                     });
                   }
+                  if (attached) {
+                    send({
+                      'msg': 'changed',
+                      'collection': 'stream-room-messages',
+                      'fields': {
+                        'args': [
+                          {
+                            'rid': 'pass-room',
+                            'u': {'username': 'qr-code-generator.bot'},
+                            'msg': 'The QR code will expire on 11.11.2026.',
+                          },
+                        ],
+                      },
+                    });
+                  }
               }
           }
         }
       });
-      expect(await client.requestPass('test-token'), base64Decode(png));
+      final pass = await client.requestPass('test-token');
+      expect(pass.image, base64Decode(png));
+      expect(pass.expiresOn, attached ? DateTime(2026, 11, 11) : null);
     });
   }
 

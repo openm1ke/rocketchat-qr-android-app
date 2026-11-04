@@ -11,6 +11,8 @@ class PassException implements Exception {
   final PassError kind;
 }
 
+typedef QrPass = ({Uint8List image, DateTime? expiresOn});
+
 class RocketChatClient {
   RocketChatClient({Uri? endpoint})
     : endpoint =
@@ -19,7 +21,7 @@ class RocketChatClient {
 
   final Uri endpoint;
 
-  Future<Uint8List> requestPass(String token) async {
+  Future<QrPass> requestPass(String token) async {
     final http = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     WebSocket? socket;
     var cancelled = false;
@@ -39,7 +41,37 @@ class RocketChatClient {
       void method(String id, String name, List<Object> params) =>
           send({'msg': 'method', 'id': id, 'method': name, 'params': params});
 
-      final reply = Completer<Uint8List>();
+      final reply = Completer<QrPass>();
+      DateTime? expiresOn;
+      Uint8List? image;
+      Timer? expiryWait;
+      var receivingImage = false;
+      void completePass() {
+        if (!reply.isCompleted && image != null) {
+          reply.complete((image: image!, expiresOn: expiresOn));
+        }
+      }
+
+      void receiveImage(Future<Uint8List> download) {
+        receivingImage = true;
+        unawaited(
+          download.then(
+            (bytes) {
+              if (reply.isCompleted) return;
+              image = bytes;
+              if (expiresOn != null) {
+                completePass();
+              } else {
+                expiryWait = Timer(const Duration(seconds: 2), completePass);
+              }
+            },
+            onError: (Object error, StackTrace stack) {
+              if (!reply.isCompleted) reply.completeError(error, stack);
+            },
+          ),
+        );
+      }
+
       String? room;
       String? userId;
       var commandSent = false;
@@ -133,17 +165,25 @@ class RocketChatClient {
                 }
                 final body = event['msg'];
                 if (body is String) {
+                  final date = _readExpiryDate(body);
+                  if (date != null) {
+                    expiresOn = date;
+                    completePass();
+                  }
                   final encoded = RegExp(
                     r'data:image/png;base64,([A-Za-z0-9+/]+={0,2})',
                   ).firstMatch(body)?.group(1);
-                  if (encoded != null) {
-                    reply.complete(_validatePng(base64Decode(encoded)));
+                  if (encoded != null && !receivingImage) {
+                    receiveImage(
+                      Future.value(_validatePng(base64Decode(encoded))),
+                    );
                     return;
                   }
                 }
 
                 final attachments = event['attachments'];
-                if (attachments is! List ||
+                if (receivingImage ||
+                    attachments is! List ||
                     sender is! Map ||
                     sender['username'] != 'qr-code-generator.bot') {
                   return;
@@ -157,7 +197,7 @@ class RocketChatClient {
                   if (url is! String || url.isEmpty) continue;
                   final id = userId;
                   if (id == null) throw const PassException(PassError.response);
-                  reply.complete(_downloadPng(http, url, token, id));
+                  receiveImage(_downloadPng(http, url, token, id));
                   return;
                 }
             }
@@ -186,6 +226,7 @@ class RocketChatClient {
         });
         return await reply.future.timeout(const Duration(seconds: 15));
       } finally {
+        expiryWait?.cancel();
         await subscription.cancel();
       }
     } on TimeoutException {
@@ -197,6 +238,20 @@ class RocketChatClient {
       http.close(force: true);
       if (socket != null) unawaited(socket.close());
     }
+  }
+
+  DateTime? _readExpiryDate(String body) {
+    final match = RegExp(
+      r'^The QR code will expire on (\d{2})\.(\d{2})\.(\d{4})\.?$',
+    ).firstMatch(body.trim());
+    if (match == null) return null;
+    final day = int.parse(match[1]!);
+    final month = int.parse(match[2]!);
+    final year = int.parse(match[3]!);
+    final date = DateTime(year, month, day);
+    return date.year == year && date.month == month && date.day == day
+        ? date
+        : null;
   }
 
   Future<Uint8List> _downloadPng(
