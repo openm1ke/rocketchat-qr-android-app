@@ -29,7 +29,7 @@ flutter build apk --debug
 
 ## Ручная сборка релизного APK
 
-В GitHub откройте **Actions → Android release APK → Run workflow** и выберите основную ветку `master`. После успешной сборки APK будет в разделе **Artifacts** соответствующего запуска. Номер сборки берётся из номера запуска workflow.
+В GitHub откройте **Actions → Android release APK → Run workflow** и выберите основную ветку `master`. После успешной сборки подписанный APK появится в разделе **Releases** как файл релиза. Копия также доступна в **Artifacts** соответствующего запуска. Номер сборки берётся из номера запуска workflow.
 
 Для подписи добавьте в **Settings → Secrets and variables → Actions** следующие секреты:
 

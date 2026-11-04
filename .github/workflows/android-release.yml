@@ -66,3 +66,32 @@ jobs:
           name: campus-pass-android-${{ github.run_number }}
           path: flutter_client/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified APK
+        uses: actions/download-artifact@v8
+        with:
+          name: campus-pass-android-${{ github.run_number }}
+          path: release-apk
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="android-${GITHUB_RUN_NUMBER}"
+          asset="campus-pass-${tag}.apk"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -Fxq "$asset"; then
+            echo "Release $tag already has $asset"
+            exit 0
+          fi
+          mv release-apk/app-release.apk "$asset"
+          gh release create "$tag" "$asset" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Campus Pass Android #${GITHUB_RUN_NUMBER}" \
+            --notes "Signed APK built from ${GITHUB_SHA}."
