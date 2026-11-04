@@ -10,6 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_secure_storage: ^11.2.0
+  image_picker: ^1.2.4
+  path_provider: ^2.1.6
+  screen_brightness: ^2.1.11
 
 dev_dependencies:
   flutter_test:
