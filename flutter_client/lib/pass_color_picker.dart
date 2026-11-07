@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 class PassColorDialog extends StatefulWidget {
-  const PassColorDialog({super.key, required this.color});
+  const PassColorDialog({super.key, required this.color, this.onDelete});
   final Color color;
+  final VoidCallback? onDelete;
 
   @override
   State<PassColorDialog> createState() => _PassColorDialogState();
@@ -195,13 +196,44 @@ class _PassColorDialogState extends State<PassColorDialog> {
       ),
     ),
     actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Отмена'),
-      ),
-      FilledButton(
-        onPressed: () => Navigator.pop(context, _hsv.toColor()),
-        child: const Text('Применить'),
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.onDelete != null)
+            TextButton.icon(
+              onPressed: () {
+                widget.onDelete!();
+                Navigator.pop(context);
+              },
+              icon: const Icon(Icons.remove_circle_outline_rounded),
+              label: const Text('Удалить этот цвет'),
+            ),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Отмена'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(44, 48),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 12,
+                    ),
+                  ),
+                  onPressed: () => Navigator.pop(context, _hsv.toColor()),
+                  child: const Text('Применить'),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     ],
   );

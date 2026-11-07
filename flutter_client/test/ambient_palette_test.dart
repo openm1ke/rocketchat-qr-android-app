@@ -11,6 +11,7 @@ void main() {
     const colors = [Color(0xff99ff55), Color(0xff064d20), Color(0xff000000)];
     final settings = const PassAppearance(theme: ThemeMode.dark).copyWith(
       ambientColors: colors,
+      ambientIntensity: .8,
       ambientUseCustomBase: true,
       background: Colors.black,
     );
@@ -18,6 +19,7 @@ void main() {
     expect(restored.ambientColors, colors);
     expect(restored.background, Colors.black);
     expect(restored.ambientUseCustomBase, true);
+    expect(restored.ambientIntensity, .8);
     expect(restored.theme, ThemeMode.dark);
     expect(
       restored.copyWith(backdrop: PassBackdrop.solid).background,
@@ -53,14 +55,18 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: passTheme(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          child: child!,
+        ),
         home: PassSettings(
           appearance: appearance,
           onChanged: (value) => appearance = value,
-          onChoosePhoto: () async => false,
         ),
       ),
     );
-    await tester.scrollUntilVisible(find.text('Матрица'), 250);
+    await tester.ensureVisible(find.text('Матрица'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Матрица'));
     await tester.pumpAndSettle();
     expect(appearance.background, Colors.black);
@@ -71,8 +77,9 @@ void main() {
       Colors.black,
     ]);
 
-    await tester.scrollUntilVisible(find.text('Добавить цвет'), 250);
-    await tester.tap(find.text('Добавить цвет'));
+    await tester.ensureVisible(find.byTooltip('Добавить цвет'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Добавить цвет'));
     await tester.pumpAndSettle();
     expect(find.byType(TextField), findsNothing);
     expect(find.byKey(const ValueKey('color-sv')), findsOneWidget);
@@ -81,8 +88,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(appearance.ambientColors.length, 4);
     expect(appearance.ambientColors.last, const Color(0xff325cf4));
-    await tester.ensureVisible(find.byTooltip('Удалить цвет 4'));
-    await tester.tap(find.byTooltip('Удалить цвет 4'));
+    await tester.ensureVisible(find.byTooltip('Изменить цвет 4'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Изменить цвет 4'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Удалить этот цвет'));
     await tester.pumpAndSettle();
     expect(appearance.ambientColors.length, 3);
   });

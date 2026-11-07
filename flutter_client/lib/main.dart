@@ -135,18 +135,6 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
     });
   }
 
-  Future<bool> _chooseBackgroundPhoto() async {
-    final selected = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1600,
-      maxHeight: 1600,
-      imageQuality: 85,
-      requestFullMetadata: false,
-    );
-    if (selected == null) return false;
-    return _storeBackgroundPhoto(selected);
-  }
-
   Future<bool> _storeBackgroundPhoto(XFile selected) async {
     if (!mounted) return false;
     if (await selected.length() > 8 * 1024 * 1024) {
@@ -174,7 +162,6 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
         builder: (settingsContext) => PassSettings(
           appearance: _appearance,
           onChanged: _saveAppearance,
-          onChoosePhoto: _chooseBackgroundPhoto,
           onEditToken: _token == null || _loading
               ? null
               : () {

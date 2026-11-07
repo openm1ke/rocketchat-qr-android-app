@@ -15,7 +15,7 @@ class PassAppearance {
     this.accent = const Color(0xff325cf4),
     this.background = const Color(0xfff5f6f8),
     this.backdrop = PassBackdrop.ambient,
-    this.ambientMotion = true,
+    this.ambientIntensity = .5,
     this.ambientColors = defaultAmbientColors,
     this.ambientUseCustomBase = false,
     this.qrSize = 1,
@@ -30,9 +30,14 @@ class PassAppearance {
   final Color accent;
   final Color background;
   final PassBackdrop backdrop;
-  final bool ambientMotion;
+
+  /// Zero keeps the glow still; higher values increase speed and travel.
+  final double ambientIntensity;
+  bool get ambientMotion => ambientIntensity > 0;
   final List<Color> ambientColors;
   final bool ambientUseCustomBase;
+  Color backgroundFor(Color themedSurface) =>
+      ambientUseCustomBase ? background : themedSurface;
   final double qrSize;
   final double scanSize;
   final double photoShade;
@@ -45,7 +50,7 @@ class PassAppearance {
     Color? accent,
     Color? background,
     PassBackdrop? backdrop,
-    bool? ambientMotion,
+    double? ambientIntensity,
     List<Color>? ambientColors,
     bool? ambientUseCustomBase,
     double? qrSize,
@@ -59,7 +64,7 @@ class PassAppearance {
     accent: accent ?? this.accent,
     background: background ?? this.background,
     backdrop: backdrop ?? this.backdrop,
-    ambientMotion: ambientMotion ?? this.ambientMotion,
+    ambientIntensity: (ambientIntensity ?? this.ambientIntensity).clamp(0, 1),
     ambientColors: ambientColors == null
         ? this.ambientColors
         : List.unmodifiable(ambientColors),
@@ -73,12 +78,12 @@ class PassAppearance {
   );
 
   String encode() => jsonEncode({
-    'version': 4,
+    'version': 5,
     'theme': theme.name,
     'accent': accent.toARGB32(),
     'background': background.toARGB32(),
     'backdrop': backdrop.name,
-    'ambientMotion': ambientMotion,
+    'ambientIntensity': ambientIntensity,
     'ambientColors': ambientColors.map((color) => color.toARGB32()).toList(),
     'ambientUseCustomBase': ambientUseCustomBase,
     'qrSize': qrSize,
@@ -95,8 +100,10 @@ class PassAppearance {
     try {
       final data = jsonDecode(value) as Map<String, dynamic>;
       final version = data['version'];
-      final currentDesign = version == 2 || version == 3 || version == 4;
+      final currentDesign = [2, 3, 4, 5].contains(version);
       final palette = data['ambientColors'];
+      final oldBackdrop = data['backdrop'];
+      final motion = data['ambientIntensity'];
       return PassAppearance(
         theme: currentDesign
             ? ThemeMode.values.byName(data['theme'] as String)
@@ -105,12 +112,18 @@ class PassAppearance {
         background: currentDesign
             ? Color(data['background'] as int)
             : defaults.background,
-        backdrop: version == 2 && data['backdrop'] == 'plain'
+        backdrop:
+            !currentDesign ||
+                oldBackdrop == 'ambient' ||
+                oldBackdrop == 'gradient' ||
+                (version == 2 && oldBackdrop == 'plain')
             ? PassBackdrop.ambient
-            : currentDesign
-            ? PassBackdrop.values.byName(data['backdrop'] as String)
-            : defaults.backdrop,
-        ambientMotion: data['ambientMotion'] as bool? ?? true,
+            : PassBackdrop.solid,
+        ambientIntensity: motion is num && motion.isFinite
+            ? motion.toDouble().clamp(0, 1)
+            : data['ambientMotion'] == false
+            ? 0
+            : defaults.ambientIntensity,
         ambientColors:
             palette is List &&
                 palette.length >= 2 &&
@@ -119,8 +132,8 @@ class PassAppearance {
             ? List.unmodifiable(palette.map((color) => Color(color as int)))
             : defaultAmbientColors,
         ambientUseCustomBase:
-            data['ambientUseCustomBase'] as bool? ??
-            data['backdrop'] == 'solid',
+            (version != 5 && oldBackdrop == 'solid') ||
+            (data['ambientUseCustomBase'] as bool? ?? false),
         qrSize: (data['qrSize'] as num).toDouble().clamp(.65, 1),
         scanSize: (data['scanSize'] as num).toDouble().clamp(.75, 1),
         photoShade: (data['photoShade'] as num).toDouble().clamp(.2, .85),

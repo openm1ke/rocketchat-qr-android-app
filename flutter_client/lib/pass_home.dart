@@ -136,12 +136,7 @@ class _PassHomeState extends State<PassHome> with WidgetsBindingObserver {
     final photo = appearance.backdrop == PassBackdrop.photo
         ? widget.backgroundPhoto
         : null;
-    final background =
-        appearance.backdrop == PassBackdrop.solid ||
-            (appearance.backdrop == PassBackdrop.ambient &&
-                appearance.ambientUseCustomBase)
-        ? appearance.background
-        : colors.surface;
+    final background = appearance.backgroundFor(colors.surface);
     final hintColor = photo != null
         ? colors.onSurfaceVariant
         : ThemeData.estimateBrightnessForColor(background) == Brightness.dark
@@ -176,8 +171,8 @@ class _PassHomeState extends State<PassHome> with WidgetsBindingObserver {
             ] else if (appearance.backdrop == PassBackdrop.ambient)
               AmbientBackground(
                 base: background,
-                accent: appearance.accent,
                 enabled: appearance.ambientMotion,
+                intensity: appearance.ambientIntensity,
                 colors: appearance.ambientColors,
               )
             else if (appearance.backdrop == PassBackdrop.gradient)

@@ -3,18 +3,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  Widget scene({bool reduced = false}) => MaterialApp(
+  Widget scene({bool reduced = false, double intensity = .5}) => MaterialApp(
     home: MediaQuery(
       data: MediaQueryData(disableAnimations: reduced),
-      child: const Scaffold(
+      child: Scaffold(
         body: AmbientBackground(
           base: Color(0xff17191e),
-          accent: Color(0xff325cf4),
           enabled: true,
+          intensity: intensity,
         ),
       ),
     ),
   );
+
+  testWidgets('zero motion intensity stops ticking', (tester) async {
+    await tester.pumpWidget(scene());
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.binding.transientCallbackCount, greaterThan(0));
+    await tester.pumpWidget(scene(intensity: 0));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.binding.transientCallbackCount, 0);
+    await tester.pumpWidget(scene(intensity: 1));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.binding.transientCallbackCount, greaterThan(0));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets('reduced motion uses a static backdrop', (tester) async {
     await tester.pumpWidget(scene(reduced: true));
