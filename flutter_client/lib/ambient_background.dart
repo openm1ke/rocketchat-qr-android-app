@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'pass_appearance.dart';
+
 /// A small adaptation of SignMoment's gradient atmosphere. Only the backdrop
 /// repaints; no video, image decoding, blur layers, or widget rebuild per frame.
 class AmbientBackground extends StatefulWidget {
@@ -10,11 +12,13 @@ class AmbientBackground extends StatefulWidget {
     required this.base,
     required this.accent,
     required this.enabled,
+    this.colors = PassAppearance.defaultAmbientColors,
   });
 
   final Color base;
   final Color accent;
   final bool enabled;
+  final List<Color> colors;
 
   @override
   State<AmbientBackground> createState() => _AmbientBackgroundState();
@@ -91,6 +95,7 @@ class _AmbientBackgroundState extends State<AmbientBackground>
             _phase,
             base: widget.base,
             accent: widget.accent,
+            colors: widget.colors,
           ),
           child: const SizedBox.expand(),
         ),
@@ -100,24 +105,28 @@ class _AmbientBackgroundState extends State<AmbientBackground>
 }
 
 class _AmbientPainter extends CustomPainter {
-  _AmbientPainter(this.phase, {required this.base, required this.accent})
-    : super(repaint: phase);
+  _AmbientPainter(
+    this.phase, {
+    required this.base,
+    required this.accent,
+    required this.colors,
+  }) : super(repaint: phase);
 
   final ValueNotifier<double> phase;
   final Color base;
   final Color accent;
+  final List<Color> colors;
 
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, Paint()..color = base);
     final dark = base.computeLuminance() < .2;
-    final colors = [accent, const Color(0xffc091b7), const Color(0xffe7a36d)];
     final t = phase.value * math.pi * 2;
     canvas.save();
     canvas.clipRect(Offset.zero & size);
     for (var i = 0; i < colors.length; i++) {
       final x = (i.isEven ? -.05 : 1.05) + math.sin(t + i * 1.8) * .18;
-      final y = .16 + i * .32 + math.cos(t * 2 + i) * .12;
+      final y = .12 + i / (colors.length - 1) * .8 + math.cos(t * 2 + i) * .12;
       canvas.save();
       canvas.translate(x * size.width, y * size.height);
       canvas.rotate(math.sin(t + i) * .3);
@@ -142,5 +151,6 @@ class _AmbientPainter extends CustomPainter {
   bool shouldRepaint(_AmbientPainter oldDelegate) =>
       oldDelegate.base != base ||
       oldDelegate.accent != accent ||
+      oldDelegate.colors != colors ||
       oldDelegate.phase != phase;
 }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'pass_appearance.dart';
+import 'pass_color_picker.dart';
 import 'pass_theme.dart';
 import 'token_guide.dart';
 import 'request_log_screen.dart';
@@ -50,22 +50,57 @@ class _PassSettingsState extends State<PassSettings> {
     }
   }
 
+  Future<Color?> _pickColor(Color color) => showDialog<Color>(
+    context: context,
+    builder: (_) => Theme(
+      data: _theme,
+      child: PassColorDialog(color: color),
+    ),
+  );
+
   Future<void> _chooseColor({required bool isAccent}) async {
-    final color = isAccent ? _value.accent : _value.background;
-    final result = await showDialog<Color>(
-      context: context,
-      builder: (_) => Theme(
-        data: _theme,
-        child: _HexColorDialog(color: color),
-      ),
+    final result = await _pickColor(
+      isAccent ? _value.accent : _value.background,
     );
     if (!mounted || result == null) return;
     _change(
       isAccent
           ? _value.copyWith(accent: result)
-          : _value.copyWith(background: result, backdrop: PassBackdrop.solid),
+          : _value.copyWith(
+              background: result,
+              backdrop: PassBackdrop.solid,
+              ambientUseCustomBase: true,
+            ),
     );
   }
+
+  Color get _ambientBase => _value.ambientUseCustomBase
+      ? _value.background
+      : _theme.colorScheme.surface;
+
+  Future<void> _chooseAmbientBase() async {
+    final result = await _pickColor(_ambientBase);
+    if (!mounted || result == null) return;
+    _change(_value.copyWith(background: result, ambientUseCustomBase: true));
+  }
+
+  Future<void> _editAmbientColor(int index) async {
+    final result = await _pickColor(_value.ambientColors[index]);
+    if (!mounted || result == null) return;
+    final colors = [..._value.ambientColors];
+    colors[index] = result;
+    _change(_value.copyWith(ambientColors: colors));
+  }
+
+  Future<void> _addAmbientColor() async {
+    if (_value.ambientColors.length >= 5) return;
+    final result = await _pickColor(_value.ambientColors.last);
+    if (!mounted || result == null) return;
+    _change(_value.copyWith(ambientColors: [..._value.ambientColors, result]));
+  }
+
+  String _hex(Color color) =>
+      '#${(color.toARGB32() & 0xffffff).toRadixString(16).padLeft(6, '0').toUpperCase()}';
 
   Widget _section(String title, List<Widget> children) {
     final theme = _theme;
@@ -180,14 +215,6 @@ class _PassSettingsState extends State<PassSettings> {
                       _value.copyWith(backdrop: PassBackdrop.ambient),
                     ),
                   ),
-                if (_value.backdrop == PassBackdrop.ambient)
-                  SwitchListTile(
-                    title: const Text('Движение фона'),
-                    subtitle: const Text('Спокойные градиенты, без видео'),
-                    value: _value.ambientMotion,
-                    onChanged: (value) =>
-                        _change(_value.copyWith(ambientMotion: value)),
-                  ),
                 ListTile(
                   title: const Text('Тема'),
                   trailing: DropdownButton<ThemeMode>(
@@ -246,6 +273,83 @@ class _PassSettingsState extends State<PassSettings> {
                     (v) => _value.copyWith(photoShade: v),
                   ),
               ]),
+              if (_value.backdrop == PassBackdrop.ambient)
+                _section('Цвета живого фона', [
+                  SwitchListTile(
+                    title: const Text('Движение фона'),
+                    subtitle: const Text(
+                      'Перетекающий градиент, до 24 кадров/с',
+                    ),
+                    value: _value.ambientMotion,
+                    onChanged: (value) =>
+                        _change(_value.copyWith(ambientMotion: value)),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.terminal_rounded),
+                    title: const Text('Матрица'),
+                    subtitle: const Text(
+                      'Чёрный, тёмно-зелёный, светло-зелёный',
+                    ),
+                    onTap: () => _change(
+                      _value.copyWith(
+                        background: const Color(0xff000000),
+                        ambientUseCustomBase: true,
+                        ambientColors: const [
+                          Color(0xff8df86b),
+                          Color(0xff0a5e2a),
+                          Color(0xff000000),
+                        ],
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    leading: _Swatch(_ambientBase),
+                    title: const Text('Цвет основы'),
+                    subtitle: Text(
+                      '${_hex(_ambientBase)} · общий с однотонным фоном',
+                    ),
+                    onTap: _chooseAmbientBase,
+                  ),
+                  for (var i = 0; i < _value.ambientColors.length; i++)
+                    ListTile(
+                      leading: _Swatch(_value.ambientColors[i]),
+                      title: Text('Цвет ${i + 1}'),
+                      subtitle: Text(_hex(_value.ambientColors[i])),
+                      onTap: () => _editAmbientColor(i),
+                      trailing: IconButton(
+                        tooltip: 'Удалить цвет ${i + 1}',
+                        onPressed: _value.ambientColors.length <= 2
+                            ? null
+                            : () {
+                                final colors = [..._value.ambientColors]
+                                  ..removeAt(i);
+                                _change(_value.copyWith(ambientColors: colors));
+                              },
+                        icon: const Icon(Icons.remove_circle_outline_rounded),
+                      ),
+                    ),
+                  ListTile(
+                    leading: const Icon(Icons.add_rounded),
+                    title: const Text('Добавить цвет'),
+                    subtitle: Text(
+                      '${_value.ambientColors.length} из 5 · выберите свой оттенок',
+                    ),
+                    enabled: _value.ambientColors.length < 5,
+                    onTap: _value.ambientColors.length >= 5
+                        ? null
+                        : _addAmbientColor,
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.palette_outlined),
+                    title: const Text('Вернуть нейтральную палитру'),
+                    onTap: () => _change(
+                      _value.copyWith(
+                        ambientColors: PassAppearance.defaultAmbientColors,
+                        ambientUseCustomBase: false,
+                      ),
+                    ),
+                  ),
+                ]),
               _section('Сканирование', [
                 _slider(
                   'Размер в режиме сканирования',
@@ -326,86 +430,4 @@ class _Swatch extends StatelessWidget {
       border: Border.all(color: Theme.of(context).colorScheme.outline),
     ),
   );
-}
-
-class _HexColorDialog extends StatefulWidget {
-  const _HexColorDialog({required this.color});
-  final Color color;
-
-  @override
-  State<_HexColorDialog> createState() => _HexColorDialogState();
-}
-
-class _HexColorDialogState extends State<_HexColorDialog> {
-  late final _input = TextEditingController(
-    text: (widget.color.toARGB32() & 0xffffff)
-        .toRadixString(16)
-        .padLeft(6, '0')
-        .toUpperCase(),
-  );
-  Color? get _color {
-    final text = _input.text;
-    final rgb = int.tryParse(text, radix: 16);
-    return text.length == 6 && rgb != null ? Color(0xff000000 | rgb) : null;
-  }
-
-  @override
-  void dispose() {
-    _input.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Выберите цвет'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Wrap(
-            spacing: 8,
-            children: [
-              for (final hex in [
-                '78F1BD',
-                '9EB7FF',
-                'F7B98A',
-                'E4AEFF',
-                '101821',
-                'F0F4F8',
-              ])
-                IconButton(
-                  tooltip: '#$hex',
-                  onPressed: () => setState(() => _input.text = hex),
-                  icon: _Swatch(Color(0xff000000 | int.parse(hex, radix: 16))),
-                ),
-            ],
-          ),
-          TextField(
-            controller: _input,
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp('[0-9a-fA-F]')),
-              LengthLimitingTextInputFormatter(6),
-            ],
-            onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(
-              labelText: 'HEX',
-              prefixText: '#',
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Отмена'),
-        ),
-        FilledButton(
-          onPressed: _color == null
-              ? null
-              : () => Navigator.pop(context, _color),
-          child: const Text('Применить'),
-        ),
-      ],
-    );
-  }
 }

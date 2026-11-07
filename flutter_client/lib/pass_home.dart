@@ -136,9 +136,17 @@ class _PassHomeState extends State<PassHome> with WidgetsBindingObserver {
     final photo = appearance.backdrop == PassBackdrop.photo
         ? widget.backgroundPhoto
         : null;
-    final background = appearance.backdrop == PassBackdrop.solid
+    final background =
+        appearance.backdrop == PassBackdrop.solid ||
+            (appearance.backdrop == PassBackdrop.ambient &&
+                appearance.ambientUseCustomBase)
         ? appearance.background
         : colors.surface;
+    final hintColor = photo != null
+        ? colors.onSurfaceVariant
+        : ThemeData.estimateBrightnessForColor(background) == Brightness.dark
+        ? const Color(0xffd6d9e3)
+        : const Color(0xff555c6b);
     final hintsVisible =
         _showHints ||
         widget.loading ||
@@ -170,6 +178,7 @@ class _PassHomeState extends State<PassHome> with WidgetsBindingObserver {
                 base: background,
                 accent: appearance.accent,
                 enabled: appearance.ambientMotion,
+                colors: appearance.ambientColors,
               )
             else if (appearance.backdrop == PassBackdrop.gradient)
               DecoratedBox(
@@ -324,7 +333,7 @@ class _PassHomeState extends State<PassHome> with WidgetsBindingObserver {
                                           textAlign: TextAlign.center,
                                           style: theme.textTheme.bodySmall
                                               ?.copyWith(
-                                                color: colors.onSurfaceVariant,
+                                                color: hintColor,
                                                 backgroundColor: photo != null
                                                     ? colors.surface
                                                     : null,

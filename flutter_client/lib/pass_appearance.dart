@@ -5,12 +5,19 @@ import 'package:flutter/material.dart';
 enum PassBackdrop { ambient, plain, gradient, solid, photo }
 
 class PassAppearance {
+  static const defaultAmbientColors = [
+    Color(0xff325cf4),
+    Color(0xffc091b7),
+    Color(0xffe7a36d),
+  ];
   const PassAppearance({
     this.theme = ThemeMode.light,
     this.accent = const Color(0xff325cf4),
     this.background = const Color(0xfff5f6f8),
     this.backdrop = PassBackdrop.ambient,
     this.ambientMotion = true,
+    this.ambientColors = defaultAmbientColors,
+    this.ambientUseCustomBase = false,
     this.qrSize = 1,
     this.scanSize = 1,
     this.photoShade = .55,
@@ -24,6 +31,8 @@ class PassAppearance {
   final Color background;
   final PassBackdrop backdrop;
   final bool ambientMotion;
+  final List<Color> ambientColors;
+  final bool ambientUseCustomBase;
   final double qrSize;
   final double scanSize;
   final double photoShade;
@@ -37,6 +46,8 @@ class PassAppearance {
     Color? background,
     PassBackdrop? backdrop,
     bool? ambientMotion,
+    List<Color>? ambientColors,
+    bool? ambientUseCustomBase,
     double? qrSize,
     double? scanSize,
     double? photoShade,
@@ -49,6 +60,10 @@ class PassAppearance {
     background: background ?? this.background,
     backdrop: backdrop ?? this.backdrop,
     ambientMotion: ambientMotion ?? this.ambientMotion,
+    ambientColors: ambientColors == null
+        ? this.ambientColors
+        : List.unmodifiable(ambientColors),
+    ambientUseCustomBase: ambientUseCustomBase ?? this.ambientUseCustomBase,
     qrSize: qrSize ?? this.qrSize,
     scanSize: scanSize ?? this.scanSize,
     photoShade: photoShade ?? this.photoShade,
@@ -58,12 +73,14 @@ class PassAppearance {
   );
 
   String encode() => jsonEncode({
-    'version': 3,
+    'version': 4,
     'theme': theme.name,
     'accent': accent.toARGB32(),
     'background': background.toARGB32(),
     'backdrop': backdrop.name,
     'ambientMotion': ambientMotion,
+    'ambientColors': ambientColors.map((color) => color.toARGB32()).toList(),
+    'ambientUseCustomBase': ambientUseCustomBase,
     'qrSize': qrSize,
     'scanSize': scanSize,
     'photoShade': photoShade,
@@ -78,7 +95,8 @@ class PassAppearance {
     try {
       final data = jsonDecode(value) as Map<String, dynamic>;
       final version = data['version'];
-      final currentDesign = version == 2 || version == 3;
+      final currentDesign = version == 2 || version == 3 || version == 4;
+      final palette = data['ambientColors'];
       return PassAppearance(
         theme: currentDesign
             ? ThemeMode.values.byName(data['theme'] as String)
@@ -93,6 +111,16 @@ class PassAppearance {
             ? PassBackdrop.values.byName(data['backdrop'] as String)
             : defaults.backdrop,
         ambientMotion: data['ambientMotion'] as bool? ?? true,
+        ambientColors:
+            palette is List &&
+                palette.length >= 2 &&
+                palette.length <= 5 &&
+                palette.every((color) => color is int)
+            ? List.unmodifiable(palette.map((color) => Color(color as int)))
+            : defaultAmbientColors,
+        ambientUseCustomBase:
+            data['ambientUseCustomBase'] as bool? ??
+            data['backdrop'] == 'solid',
         qrSize: (data['qrSize'] as num).toDouble().clamp(.65, 1),
         scanSize: (data['scanSize'] as num).toDouble().clamp(.75, 1),
         photoShade: (data['photoShade'] as num).toDouble().clamp(.2, .85),
