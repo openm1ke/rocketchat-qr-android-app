@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'request_log.dart';
+
 enum PassError { authorization, network, timeout, bot, response }
 
 class PassException implements Exception {
@@ -22,6 +24,8 @@ class RocketChatClient {
   final Uri endpoint;
 
   Future<QrPass> requestPass(String token) async {
+    final traceTimer = Stopwatch()..start();
+    RequestLog.instance.webSocketState(endpoint, 'opening');
     final http = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     WebSocket? socket;
     var cancelled = false;
@@ -35,9 +39,13 @@ class RocketChatClient {
             return connection;
           });
       socket = await opening.timeout(const Duration(seconds: 8));
+      RequestLog.instance.webSocketState(endpoint, 'connected');
       final connection = socket;
-      void send(Map<String, Object?> message) =>
-          connection.add(jsonEncode(message));
+      void send(Map<String, Object?> message) {
+        RequestLog.instance.webSocketFrame(endpoint, message, incoming: false);
+        connection.add(jsonEncode(message));
+      }
+
       void method(String id, String name, List<Object> params) =>
           send({'msg': 'method', 'id': id, 'method': name, 'params': params});
 
@@ -81,6 +89,11 @@ class RocketChatClient {
           try {
             final message = jsonDecode(frame);
             if (message is! Map<String, dynamic>) return;
+            RequestLog.instance.webSocketFrame(
+              endpoint,
+              message,
+              incoming: true,
+            );
             switch (message['msg']) {
               case 'ping':
                 send({
@@ -230,10 +243,25 @@ class RocketChatClient {
         await subscription.cancel();
       }
     } on TimeoutException {
+      RequestLog.instance.webSocketState(endpoint, 'timeout', failed: true);
       throw const PassException(PassError.timeout);
     } on IOException {
+      RequestLog.instance.webSocketState(endpoint, 'network', failed: true);
       throw const PassException(PassError.network);
+    } on PassException catch (failure) {
+      RequestLog.instance.webSocketState(
+        endpoint,
+        failure.kind.name,
+        failed: true,
+      );
+      rethrow;
     } finally {
+      traceTimer.stop();
+      RequestLog.instance.webSocketState(
+        endpoint,
+        'closed',
+        durationMs: traceTimer.elapsedMilliseconds,
+      );
       cancelled = true;
       http.close(force: true);
       if (socket != null) unawaited(socket.close());
@@ -269,30 +297,73 @@ class RocketChatClient {
         !image.path.startsWith('/file-upload/')) {
       throw const PassException(PassError.response);
     }
-    final request = await http.getUrl(image);
-    request.followRedirects = false;
-    request.headers.set('X-Auth-Token', token);
-    request.headers.set('X-User-Id', userId);
-    request.cookies.addAll([
-      Cookie('rc_token', token),
-      Cookie('rc_uid', userId),
-    ]);
-    final response = await request.close();
-    if (response.statusCode == HttpStatus.unauthorized ||
-        response.statusCode == HttpStatus.forbidden) {
-      throw const PassException(PassError.authorization);
-    }
-    if (response.statusCode != HttpStatus.ok) {
-      throw const PassException(PassError.response);
-    }
-    final bytes = BytesBuilder(copy: false);
-    await for (final chunk in response) {
-      bytes.add(chunk);
-      if (bytes.length > 4 * 1024 * 1024) {
+    final timer = Stopwatch()..start();
+    final trace = RequestLog.instance.beginHttp(
+      image,
+      'GET',
+      headers: {
+        'X-Auth-Token': token,
+        'X-User-Id': userId,
+        'Cookie': '[скрыто]',
+      },
+    );
+    int? traceStatus;
+    try {
+      final request = await http.getUrl(image);
+      request.followRedirects = false;
+      request.headers.set('X-Auth-Token', token);
+      request.headers.set('X-User-Id', userId);
+      request.cookies.addAll([
+        Cookie('rc_token', token),
+        Cookie('rc_uid', userId),
+      ]);
+      final response = await request.close();
+      traceStatus = response.statusCode;
+      if (response.statusCode == HttpStatus.unauthorized ||
+          response.statusCode == HttpStatus.forbidden) {
+        throw const PassException(PassError.authorization);
+      }
+      if (response.statusCode != HttpStatus.ok) {
         throw const PassException(PassError.response);
       }
+      final bytes = BytesBuilder(copy: false);
+      await for (final chunk in response) {
+        bytes.add(chunk);
+        if (bytes.length > 4 * 1024 * 1024) {
+          throw const PassException(PassError.response);
+        }
+      }
+      final png = _validatePng(bytes.takeBytes());
+      RequestLog.instance.endHttp(
+        trace,
+        statusCode: traceStatus,
+        response: {
+          'Content-Type': response.headers.contentType?.toString(),
+          'bytes': png.length,
+          'pngValid': true,
+        },
+        durationMs: timer.elapsedMilliseconds,
+      );
+      return png;
+    } on PassException catch (failure) {
+      RequestLog.instance.endHttp(
+        trace,
+        statusCode: traceStatus,
+        failure: failure.kind.name,
+        durationMs: timer.elapsedMilliseconds,
+      );
+      rethrow;
+    } on IOException {
+      RequestLog.instance.endHttp(
+        trace,
+        statusCode: traceStatus,
+        failure: 'network',
+        durationMs: timer.elapsedMilliseconds,
+      );
+      rethrow;
+    } finally {
+      timer.stop();
     }
-    return _validatePng(bytes.takeBytes());
   }
 
   Uint8List _validatePng(Uint8List bytes) {

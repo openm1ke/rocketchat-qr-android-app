@@ -9,10 +9,14 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 
+import 'connection_screen.dart';
 import 'pass_appearance.dart';
+import 'pass_home.dart';
+import 'pass_theme.dart';
 import 'pass_settings.dart';
 import 'qr_transition.dart';
 import 'rocket_chat_client.dart';
+import 'request_log.dart';
 
 void main() => runApp(const CampusPassApp());
 
@@ -23,11 +27,8 @@ class CampusPassApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
     title: 'Пропуск в кампус',
-    theme: ThemeData(colorSchemeSeed: const Color(0xff006b58)),
-    darkTheme: ThemeData(
-      brightness: Brightness.dark,
-      colorSchemeSeed: const Color(0xff006b58),
-    ),
+    theme: passTheme(),
+    darkTheme: passTheme(brightness: Brightness.dark),
     home: const PassScreen(),
   );
 }
@@ -46,7 +47,6 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
   static const _lifetime = Duration(seconds: 30);
   final _storage = const FlutterSecureStorage();
   final _client = RocketChatClient();
-  final _input = TextEditingController();
   String? _token;
   Uint8List? _image;
   DateTime? _expires;
@@ -56,6 +56,7 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
   bool _loading = true;
   bool _editing = false;
   bool _expanded = false;
+  bool _reconnectRequired = false;
   PassAppearance _appearance = const PassAppearance();
   Uint8List? _backgroundPhoto;
   Future<void> _appearanceWrite = Future.value();
@@ -73,7 +74,6 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _expiryTimer?.cancel();
     if (_expanded) unawaited(_setScanBrightness(false));
-    _input.dispose();
     super.dispose();
   }
 
@@ -207,29 +207,16 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _saveToken() async {
-    if (_loading) return;
-    final token = _input.text.trim();
-    if (token.isEmpty) {
-      setState(() => _error = 'Вставьте токен Rocket.Chat.');
-      return;
-    }
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _saveConnection(String token) async {
+    // Commit only the personal/manual token. The login session never reaches storage.
     try {
       await _storage.write(key: _tokenKey, value: token);
+      RequestLog.instance.credentialSaved(success: true);
     } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = 'Не удалось сохранить токен.';
-      });
-      return;
+      RequestLog.instance.credentialSaved(success: false);
+      rethrow;
     }
     if (!mounted) return;
-    _input.clear();
     _expiryTimer?.cancel();
     setState(() {
       _token = token;
@@ -237,9 +224,11 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
       _expires = null;
       _expiresOn = null;
       _editing = false;
+      _reconnectRequired = false;
+      _error = null;
       _loading = false;
     });
-    await _refresh();
+    unawaited(_refresh());
   }
 
   Future<void> _setScanBrightness(bool enabled) async {
@@ -302,15 +291,18 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
         _image = image;
         _expires = expires;
         _expiresOn = pass.expiresOn;
+        _reconnectRequired = false;
       });
       _expiryTimer = Timer(remaining, _expire);
     } on PassException catch (failure) {
       if (!mounted) return;
-      if (failure.kind == PassError.authorization) _expire();
+      if (failure.kind == PassError.authorization) {
+        _expire();
+        _reconnectRequired = true;
+      }
       setState(
         () => _error = switch (failure.kind) {
-          PassError.authorization =>
-            'Rocket.Chat отклонил токен. Проверьте или замените его.',
+          PassError.authorization => 'Подключение к Rocket.Chat больше не действует. Подключитесь заново.',
           PassError.network =>
             'Нет соединения с Rocket.Chat. Проверьте сеть и повторите.',
           PassError.timeout =>
@@ -347,16 +339,19 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
         onPopInvokedWithResult: (didPop, _) {
           if (!didPop) _toggleScanMode();
         },
-        child: Scaffold(
-          backgroundColor: Colors.white,
-          body: SafeArea(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: FractionallySizedBox(
-                  widthFactor: _appearance.scanSize,
-                  heightFactor: _appearance.scanSize,
-                  child: _qrImage(image, expanded: true),
+        child: AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle.dark,
+          child: Scaffold(
+            backgroundColor: Colors.white,
+            body: SafeArea(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: FractionallySizedBox(
+                    widthFactor: _appearance.scanSize,
+                    heightFactor: _appearance.scanSize,
+                    child: _qrImage(image, expanded: true),
+                  ),
                 ),
               ),
             ),
@@ -370,230 +365,35 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
       ThemeMode.light => Brightness.light,
       ThemeMode.system => MediaQuery.platformBrightnessOf(context),
     };
-    final colors = ColorScheme.fromSeed(
-      seedColor: _appearance.accent,
-      brightness: brightness,
-    );
     return Theme(
-      data: ThemeData(colorScheme: colors, useMaterial3: true),
-      child: Builder(builder: _buildPass),
-    );
-  }
-
-  Widget _buildPass(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final setup = _editing || (_token == null && !_loading);
-    final custom = _appearance.backdrop;
-    final photo = custom == PassBackdrop.photo ? _backgroundPhoto : null;
-    final background = custom == PassBackdrop.solid
-        ? _appearance.background
-        : colors.brightness == Brightness.dark
-        ? const Color(0xff101821)
-        : const Color(0xffeaf1ef);
-    final onBackground =
-        ThemeData.estimateBrightnessForColor(background) == Brightness.dark
-        ? Colors.white
-        : const Color(0xff152520);
-
-    return Scaffold(
-      backgroundColor: background,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (photo != null) ...[
-            Image.memory(photo, fit: BoxFit.cover, excludeFromSemantics: true),
-            ColoredBox(
-              color: Colors.black.withValues(alpha: _appearance.photoShade),
-            ),
-          ] else if (custom != PassBackdrop.solid)
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: const Alignment(.85, -.8),
-                  radius: 1.15,
-                  colors: [
-                    Color.alphaBlend(
-                      _appearance.accent.withValues(alpha: .24),
-                      background,
-                    ),
-                    background,
-                  ],
-                ),
-              ),
-            ),
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 480),
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: colors.primary,
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                          child: Icon(Icons.qr_code_2, color: colors.onPrimary),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'Пропуск в кампус',
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              color: photo == null
-                                  ? onBackground
-                                  : Colors.white,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        IconButton.filledTonal(
-                          tooltip: 'Настройки пропуска',
-                          onPressed: _editing ? null : _openSettings,
-                          icon: const Icon(Icons.tune_rounded),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-                      decoration: BoxDecoration(
-                        color: colors.surface,
-                        borderRadius: BorderRadius.circular(30),
-                        border: Border.all(color: colors.outlineVariant),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  setup
-                                      ? 'Подключите Rocket.Chat'
-                                      : 'QR-код для входа',
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                              if (_image != null && !setup)
-                                Icon(
-                                  Icons.check_circle_outline,
-                                  color: colors.primary,
-                                  semanticLabel: 'QR готов',
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          if (setup)
-                            ..._tokenForm()
-                          else ...[
-                            if (_image case final image?) ...[
-                              FractionallySizedBox(
-                                widthFactor: _appearance.qrSize,
-                                child: Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: _qrImage(image),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              if (_appearance.showExpiry && _expiresOn != null)
-                                Text(
-                                  'Срок действия до ${_expiresOn!.day.toString().padLeft(2, '0')}.'
-                                  '${_expiresOn!.month.toString().padLeft(2, '0')}.${_expiresOn!.year}',
-                                  textAlign: TextAlign.center,
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                              Text(
-                                'Нажмите на QR, чтобы увеличить',
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: colors.onSurfaceVariant,
-                                ),
-                              ),
-                            ] else if (!_loading)
-                              const Text('Получите код перед проходом.'),
-                            if (_token != null) ...[
-                              const SizedBox(height: 14),
-                              FilledButton.tonalIcon(
-                                onPressed: _loading ? null : _refresh,
-                                icon: const Icon(Icons.refresh_rounded),
-                                label: Text(
-                                  _image == null
-                                      ? 'Получить QR'
-                                      : 'Обновить QR',
-                                ),
-                              ),
-                            ],
-                          ],
-                          if (_loading) ...[
-                            const SizedBox(height: 12),
-                            const LinearProgressIndicator(),
-                          ],
-                          if (_error case final error?) ...[
-                            const SizedBox(height: 12),
-                            Semantics(
-                              liveRegion: true,
-                              child: Text(
-                                error,
-                                style: TextStyle(color: colors.error),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
+      data: passTheme(brightness: brightness, accent: _appearance.accent),
+      child: Builder(
+        builder: (context) {
+          if (_editing || (_token == null && !_loading)) {
+            return ConnectionScreen(
+              onConnected: _saveConnection,
+              onCancel: _token == null
+                  ? null
+                  : () => setState(() => _editing = false),
+            );
+          }
+          return PassHome(
+            appearance: _appearance,
+            loading: _loading,
+            qr: _image == null ? null : _qrImage(_image!),
+            expiresOn: _expiresOn,
+            error: _error,
+            reconnectRequired: _reconnectRequired,
+            backgroundPhoto: _backgroundPhoto,
+            onRefresh: _refresh,
+            onConnect: () => setState(() {
+              _editing = true;
+              _error = null;
+            }),
+            onSettings: _openSettings,
+          );
+        },
       ),
     );
   }
-
-  List<Widget> _tokenForm() => [
-    const Text('Вставьте токен личного доступа из настроек Rocket.Chat.'),
-    const SizedBox(height: 12),
-    TextField(
-      controller: _input,
-      enabled: !_loading,
-      obscureText: true,
-      autocorrect: false,
-      enableSuggestions: false,
-      decoration: const InputDecoration(
-        labelText: 'Токен Rocket.Chat',
-        border: OutlineInputBorder(),
-      ),
-      onSubmitted: (_) => _saveToken(),
-    ),
-    const SizedBox(height: 12),
-    FilledButton(
-      onPressed: _loading ? null : _saveToken,
-      child: const Text('Сохранить и получить QR'),
-    ),
-    if (_token != null)
-      TextButton(
-        onPressed: _loading
-            ? null
-            : () => setState(() {
-                _input.clear();
-                _editing = false;
-                _error = null;
-              }),
-        child: const Text('Отмена'),
-      ),
-  ];
 }

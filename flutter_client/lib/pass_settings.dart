@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'pass_appearance.dart';
+import 'pass_theme.dart';
+import 'token_guide.dart';
+import 'request_log_screen.dart';
 
 class PassSettings extends StatefulWidget {
   const PassSettings({
@@ -127,12 +130,7 @@ class _PassSettingsState extends State<PassSettings> {
       ThemeMode.light => Brightness.light,
       ThemeMode.system => MediaQuery.platformBrightnessOf(context),
     };
-    return ThemeData(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: _value.accent,
-        brightness: brightness,
-      ),
-    );
+    return passTheme(brightness: brightness, accent: _value.accent);
   }
 
   @override
@@ -174,6 +172,22 @@ class _PassSettingsState extends State<PassSettings> {
                 ),
               ]),
               _section('Оформление', [
+                if (_value.backdrop != PassBackdrop.ambient)
+                  ListTile(
+                    title: const Text('Живой фон'),
+                    leading: const Icon(Icons.blur_on_rounded),
+                    onTap: () => _change(
+                      _value.copyWith(backdrop: PassBackdrop.ambient),
+                    ),
+                  ),
+                if (_value.backdrop == PassBackdrop.ambient)
+                  SwitchListTile(
+                    title: const Text('Движение фона'),
+                    subtitle: const Text('Спокойные градиенты, без видео'),
+                    value: _value.ambientMotion,
+                    onChanged: (value) =>
+                        _change(_value.copyWith(ambientMotion: value)),
+                  ),
                 ListTile(
                   title: const Text('Тема'),
                   trailing: DropdownButton<ThemeMode>(
@@ -216,6 +230,13 @@ class _PassSettingsState extends State<PassSettings> {
                       _value.copyWith(backdrop: PassBackdrop.gradient),
                     ),
                   ),
+                if (_value.backdrop != PassBackdrop.plain)
+                  ListTile(
+                    title: const Text('Стандартный фон'),
+                    leading: const Icon(Icons.crop_square_rounded),
+                    onTap: () =>
+                        _change(_value.copyWith(backdrop: PassBackdrop.plain)),
+                  ),
                 if (_value.backdrop == PassBackdrop.photo)
                   _slider(
                     'Затемнение фото',
@@ -246,16 +267,41 @@ class _PassSettingsState extends State<PassSettings> {
                 ),
               ]),
               _section('Аккаунт и сброс', [
+                ListTile(
+                  leading: const Icon(Icons.help_outline_rounded),
+                  title: const Text('Где взять токен?'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(builder: (_) => const TokenGuideScreen()),
+                  ),
+                ),
                 if (widget.onEditToken != null)
                   ListTile(
                     leading: const Icon(Icons.key_outlined),
-                    title: const Text('Заменить токен'),
+                    title: const Text('Подключение Rocket.Chat'),
+                    subtitle: const Text('Войти заново или заменить токен'),
                     onTap: widget.onEditToken,
                   ),
                 ListTile(
                   leading: const Icon(Icons.restart_alt),
                   title: const Text('Сбросить оформление'),
                   onTap: () => _change(const PassAppearance()),
+                ),
+              ]),
+              _section('Для разработчиков', [
+                ListTile(
+                  leading: const Icon(Icons.receipt_long_outlined),
+                  title: const Text('Журнал запросов'),
+                  subtitle: const Text(
+                    'HTTP, WebSocket и результаты подключения',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          Theme(data: _theme, child: const RequestLogScreen()),
+                    ),
+                  ),
                 ),
               ]),
             ],

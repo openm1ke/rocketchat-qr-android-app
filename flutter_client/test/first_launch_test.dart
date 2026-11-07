@@ -4,12 +4,18 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('opens the token setup screen on first launch', (tester) async {
+  testWidgets('offers login and a guided manual-token fallback', (
+    tester,
+  ) async {
     FlutterSecureStorage.setMockInitialValues({});
     await tester.pumpWidget(const CampusPassApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('Подключите Rocket.Chat'), findsOneWidget);
+    expect(find.text('Подключить Rocket.Chat'), findsOneWidget);
+    expect(find.text('Логин или почта Rocket.Chat'), findsOneWidget);
+    await tester.tap(find.text('У меня есть токен'));
+    await tester.pumpAndSettle();
+    expect(find.text('Где взять токен?'), findsWidgets);
     expect(
       tester.widget<TextField>(find.byType(TextField)).obscureText,
       isTrue,

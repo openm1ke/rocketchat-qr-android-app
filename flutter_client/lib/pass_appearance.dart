@@ -2,15 +2,16 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
-enum PassBackdrop { gradient, solid, photo }
+enum PassBackdrop { ambient, plain, gradient, solid, photo }
 
 class PassAppearance {
   const PassAppearance({
-    this.theme = ThemeMode.dark,
-    this.accent = const Color(0xff78f1bd),
-    this.background = const Color(0xff101821),
-    this.backdrop = PassBackdrop.gradient,
-    this.qrSize = .9,
+    this.theme = ThemeMode.light,
+    this.accent = const Color(0xff325cf4),
+    this.background = const Color(0xfff5f6f8),
+    this.backdrop = PassBackdrop.ambient,
+    this.ambientMotion = true,
+    this.qrSize = 1,
     this.scanSize = 1,
     this.photoShade = .55,
     this.showExpiry = true,
@@ -22,6 +23,7 @@ class PassAppearance {
   final Color accent;
   final Color background;
   final PassBackdrop backdrop;
+  final bool ambientMotion;
   final double qrSize;
   final double scanSize;
   final double photoShade;
@@ -34,6 +36,7 @@ class PassAppearance {
     Color? accent,
     Color? background,
     PassBackdrop? backdrop,
+    bool? ambientMotion,
     double? qrSize,
     double? scanSize,
     double? photoShade,
@@ -45,6 +48,7 @@ class PassAppearance {
     accent: accent ?? this.accent,
     background: background ?? this.background,
     backdrop: backdrop ?? this.backdrop,
+    ambientMotion: ambientMotion ?? this.ambientMotion,
     qrSize: qrSize ?? this.qrSize,
     scanSize: scanSize ?? this.scanSize,
     photoShade: photoShade ?? this.photoShade,
@@ -54,10 +58,12 @@ class PassAppearance {
   );
 
   String encode() => jsonEncode({
+    'version': 3,
     'theme': theme.name,
     'accent': accent.toARGB32(),
     'background': background.toARGB32(),
     'backdrop': backdrop.name,
+    'ambientMotion': ambientMotion,
     'qrSize': qrSize,
     'scanSize': scanSize,
     'photoShade': photoShade,
@@ -71,11 +77,22 @@ class PassAppearance {
     if (value == null) return defaults;
     try {
       final data = jsonDecode(value) as Map<String, dynamic>;
+      final version = data['version'];
+      final currentDesign = version == 2 || version == 3;
       return PassAppearance(
-        theme: ThemeMode.values.byName(data['theme'] as String),
-        accent: Color(data['accent'] as int),
-        background: Color(data['background'] as int),
-        backdrop: PassBackdrop.values.byName(data['backdrop'] as String),
+        theme: currentDesign
+            ? ThemeMode.values.byName(data['theme'] as String)
+            : defaults.theme,
+        accent: currentDesign ? Color(data['accent'] as int) : defaults.accent,
+        background: currentDesign
+            ? Color(data['background'] as int)
+            : defaults.background,
+        backdrop: version == 2 && data['backdrop'] == 'plain'
+            ? PassBackdrop.ambient
+            : currentDesign
+            ? PassBackdrop.values.byName(data['backdrop'] as String)
+            : defaults.backdrop,
+        ambientMotion: data['ambientMotion'] as bool? ?? true,
         qrSize: (data['qrSize'] as num).toDouble().clamp(.65, 1),
         scanSize: (data['scanSize'] as num).toDouble().clamp(.75, 1),
         photoShade: (data['photoShade'] as num).toDouble().clamp(.2, .85),

@@ -3,12 +3,14 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:campus_pass/rocket_chat_client.dart';
+import 'package:campus_pass/request_log.dart';
 
 void main() {
   late HttpServer server;
   late RocketChatClient client;
 
   setUp(() async {
+    RequestLog.instance.clear();
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     client = RocketChatClient(
       endpoint: Uri.parse('ws://127.0.0.1:${server.port}'),
@@ -120,6 +122,11 @@ void main() {
       final pass = await client.requestPass('test-token');
       expect(pass.image, base64Decode(png));
       expect(pass.expiresOn, attached ? DateTime(2026, 11, 11) : null);
+      expect(RequestLog.instance.webSocketMethods, 3);
+      expect(RequestLog.instance.httpRequests, attached ? 1 : 0);
+      final trace = RequestLog.instance.events.map((e) => e.details).join();
+      expect(trace, isNot(contains('test-token')));
+      expect(trace, isNot(contains(png)));
     });
   }
 
