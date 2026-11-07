@@ -1,0 +1,10 @@
+{
+  "native_resource_count": 46,
+  "reproducible_export": true,
+  "android_debug_apk_built": true,
+  "android_apk_contains_adaptive_and_monochrome": true,
+  "android_packaged_launcher_pixels_match": true,
+  "ios_simulator_build": true,
+  "ios_home_screen_visually_verified": true,
+  "ios_simulator": "iPhone 17 / iOS 27.0"
+}

@@ -1,0 +1,38 @@
+{
+  "artwork": "assets/branding/school21-artwork.svg",
+  "artwork_sha256": "929ad2d80577ffe9a6a46aa2c0620cefd32e99d570a556e31a585016d6938d28",
+  "android_layer_dp": 108,
+  "android_artwork_dp": 46.5,
+  "android_max_foreground_radius_dp": 32.7585,
+  "android_safe_zone_radius_dp": 33,
+  "android_densities": {
+    "mdpi": 48,
+    "hdpi": 72,
+    "xhdpi": 96,
+    "xxhdpi": 144,
+    "xxxhdpi": 192
+  },
+  "ios_sizes": {
+    "Icon-App-20x20@2x.png": 40,
+    "Icon-App-20x20@3x.png": 60,
+    "Icon-App-29x29@1x.png": 29,
+    "Icon-App-29x29@2x.png": 58,
+    "Icon-App-29x29@3x.png": 87,
+    "Icon-App-40x40@2x.png": 80,
+    "Icon-App-40x40@3x.png": 120,
+    "Icon-App-60x60@2x.png": 120,
+    "Icon-App-60x60@3x.png": 180,
+    "Icon-App-20x20@1x.png": 20,
+    "Icon-App-40x40@1x.png": 40,
+    "Icon-App-76x76@1x.png": 76,
+    "Icon-App-76x76@2x.png": 152,
+    "Icon-App-83.5x83.5@2x.png": 167,
+    "Icon-App-1024x1024@1x.png": 1024
+  },
+  "checks": {
+    "adaptive_safe_zone": true,
+    "ios_dimensions_and_opaque_rgb": true,
+    "android_dimensions": true,
+    "android_xml_parses": true
+  }
+}
