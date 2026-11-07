@@ -19,6 +19,150 @@ void main() {
 
   tearDown(() async => server.close(force: true));
 
+  void serveLimited(String stage, {String? retryAfter, DateTime? reset}) {
+    server.listen((request) async {
+      if (stage == 'handshake' ||
+          request.uri.path == '/file-upload/limited.png') {
+        request.response.statusCode = 429;
+        if (retryAfter != null) {
+          request.response.headers.set('Retry-After', retryAfter);
+        }
+        if (reset != null) {
+          request.response.headers.set(
+            'X-RateLimit-Reset',
+            '${reset.millisecondsSinceEpoch}',
+          );
+        }
+        await request.response.close();
+        return;
+      }
+      final socket = await WebSocketTransformer.upgrade(request);
+      void send(Map<String, Object?> data) => socket.add(jsonEncode(data));
+      await for (final frame in socket) {
+        final data = jsonDecode(frame as String) as Map<String, dynamic>;
+        if (data['msg'] == 'connect') {
+          send({'msg': 'connected'});
+        } else if (data['msg'] == 'sub') {
+          send({
+            'msg': 'ready',
+            'subs': ['room'],
+          });
+        } else if (data['msg'] == 'method') {
+          if (data['id'] == stage) {
+            send({
+              'msg': 'result',
+              'id': data['id'],
+              'error': {
+                'error': 'too-many-requests',
+                'details': {'timeToReset': 90000},
+              },
+            });
+          } else if (data['id'] == 'login') {
+            send({
+              'msg': 'result',
+              'id': 'login',
+              'result': {'id': 'test-user'},
+            });
+          } else if (data['id'] == 'dm') {
+            send({
+              'msg': 'result',
+              'id': 'dm',
+              'result': {'rid': 'pass-room'},
+            });
+          } else if (data['id'] == 'enter') {
+            send({
+              'msg': 'changed',
+              'collection': 'stream-room-messages',
+              'fields': {
+                'args': [
+                  {
+                    'rid': 'pass-room',
+                    'u': {'username': 'qr-code-generator.bot'},
+                    'attachments': [
+                      {
+                        'image_type': 'image/png',
+                        'image_url': '/file-upload/limited.png',
+                      },
+                    ],
+                  },
+                ],
+              },
+            });
+          }
+        }
+      }
+    });
+  }
+
+  for (final stage in ['login', 'enter']) {
+    test(
+      'DDP rate limit at $stage preserves server wait and is not an auth failure',
+      () async {
+        serveLimited(stage);
+        final started = DateTime.now();
+        await expectLater(
+          client.requestPass('test-token'),
+          throwsA(
+            isA<PassException>()
+                .having((e) => e.kind, 'kind', PassError.rateLimit)
+                .having(
+                  (e) => e.retryAt!.difference(started).inSeconds,
+                  'server pause',
+                  greaterThanOrEqualTo(89),
+                ),
+          ),
+        );
+      },
+    );
+  }
+
+  test('HTTP 429 during WebSocket handshake is a rate limit', () async {
+    serveLimited('handshake');
+    await expectLater(
+      client.requestPass('test-token'),
+      throwsA(
+        isA<PassException>().having((e) => e.kind, 'kind', PassError.rateLimit),
+      ),
+    );
+  });
+
+  for (final dated in [false, true]) {
+    test(
+      'HTTP 429 for PNG honors ${dated ? 'HTTP date and reset' : 'Retry-After seconds'}',
+      () async {
+        final start = DateTime.now();
+        final reset = DateTime.fromMillisecondsSinceEpoch(
+          (start.millisecondsSinceEpoch ~/ 1000 + 120) * 1000,
+        );
+        serveLimited(
+          'download',
+          retryAfter: dated
+              ? HttpDate.format(start.add(const Duration(seconds: 60)))
+              : '90',
+          reset: dated ? reset : null,
+        );
+        await expectLater(
+          client.requestPass('test-token'),
+          throwsA(
+            isA<PassException>()
+                .having((e) => e.kind, 'kind', PassError.rateLimit)
+                .having(
+                  (e) => e.retryAt!.millisecondsSinceEpoch,
+                  'retry time',
+                  dated
+                      ? equals(reset.millisecondsSinceEpoch)
+                      : greaterThanOrEqualTo(
+                          start
+                              .add(const Duration(seconds: 89))
+                              .millisecondsSinceEpoch,
+                        ),
+                ),
+          ),
+        );
+      },
+    );
+  }
+
   for (final attached in [false, true]) {
     test('requests a QR (attachment: $attached) and ignores other senders', () async {
       const png =

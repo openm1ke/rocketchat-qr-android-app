@@ -73,6 +73,47 @@ void main() {
     expect(migrated.backdrop, PassBackdrop.ambient);
   });
 
+  testWidgets('cooldown disables refresh and counts down on a narrow screen', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(375, 812);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var now = DateTime(2026, 11, 8, 12);
+    var requests = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: passTheme(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.linear(1.4)),
+          child: child!,
+        ),
+        home: PassHome(
+          appearance: const PassAppearance(backdrop: PassBackdrop.solid),
+          loading: false,
+          qr: const SizedBox.expand(),
+          nextRequestAt: now.add(const Duration(seconds: 30)),
+          now: () => now,
+          onRefresh: () => requests++,
+          onConnect: () {},
+          onSettings: () {},
+        ),
+      ),
+    );
+    final refresh = find.widgetWithIcon(IconButton, Icons.refresh_rounded);
+    expect(tester.widget<IconButton>(refresh).onPressed, isNull);
+    expect(find.text('Обновить через 30 с'), findsOneWidget);
+    now = now.add(const Duration(seconds: 30));
+    await tester.pump(const Duration(seconds: 30));
+    await tester.ensureVisible(refresh);
+    await tester.tap(refresh);
+    expect(requests, 1);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets(
     'hides hints after three seconds but keeps errors and pass information available',
     (tester) async {

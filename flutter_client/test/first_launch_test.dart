@@ -1,14 +1,26 @@
 import 'package:campus_pass/main.dart';
+import 'package:campus_pass/pass_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/pass_fixtures.dart';
 
 void main() {
   testWidgets('offers login and a guided manual-token fallback', (
     tester,
   ) async {
     FlutterSecureStorage.setMockInitialValues({});
-    await tester.pumpWidget(const CampusPassApp());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PassScreen(
+          passes: PassRepository(
+            client: FixturePassClient(),
+            store: MemoryPassStore(),
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Подключить Rocket.Chat'), findsOneWidget);

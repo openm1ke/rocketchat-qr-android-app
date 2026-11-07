@@ -19,6 +19,8 @@ class PassHome extends StatefulWidget {
     this.error,
     this.reconnectRequired = false,
     this.backgroundPhoto,
+    this.nextRequestAt,
+    this.now,
   });
 
   final PassAppearance appearance;
@@ -28,6 +30,8 @@ class PassHome extends StatefulWidget {
   final String? error;
   final bool reconnectRequired;
   final Uint8List? backgroundPhoto;
+  final DateTime? nextRequestAt;
+  final DateTime Function()? now;
   final VoidCallback onRefresh;
   final VoidCallback onConnect;
   final VoidCallback onSettings;
@@ -38,6 +42,7 @@ class PassHome extends StatefulWidget {
 
 class _PassHomeState extends State<PassHome> with WidgetsBindingObserver {
   Timer? _hintTimer;
+  Timer? _cooldownTimer;
   bool _showHints = true;
 
   @override
@@ -45,6 +50,23 @@ class _PassHomeState extends State<PassHome> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scheduleHints();
+    _scheduleCooldown();
+  }
+
+  int get _waitSeconds {
+    final until = widget.nextRequestAt;
+    if (until == null) return 0;
+    final remaining = until.difference(widget.now?.call() ?? DateTime.now());
+    return remaining.isNegative ? 0 : (remaining.inMilliseconds / 1000).ceil();
+  }
+
+  void _scheduleCooldown() {
+    _cooldownTimer?.cancel();
+    if (_waitSeconds == 0) return;
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_waitSeconds == 0) timer.cancel();
+      if (mounted) setState(() {});
+    });
   }
 
   void _scheduleHints() {
@@ -63,12 +85,14 @@ class _PassHomeState extends State<PassHome> with WidgetsBindingObserver {
     if (oldWidget.qr != widget.qr || oldWidget.loading != widget.loading) {
       _scheduleHints();
     }
+    if (oldWidget.nextRequestAt != widget.nextRequestAt) _scheduleCooldown();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
       setState(_scheduleHints);
+      _scheduleCooldown();
     }
   }
 
@@ -76,6 +100,7 @@ class _PassHomeState extends State<PassHome> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _hintTimer?.cancel();
+    _cooldownTimer?.cancel();
     super.dispose();
   }
 
@@ -361,7 +386,10 @@ class _PassHomeState extends State<PassHome> with WidgetsBindingObserver {
                                 const Spacer(),
                                 if (widget.qr == null)
                                   FilledButton.icon(
-                                    onPressed: widget.loading
+                                    onPressed:
+                                        widget.loading ||
+                                            (!widget.reconnectRequired &&
+                                                _waitSeconds > 0)
                                         ? null
                                         : widget.reconnectRequired
                                         ? widget.onConnect
@@ -377,28 +405,46 @@ class _PassHomeState extends State<PassHome> with WidgetsBindingObserver {
                                           ? 'Получаем QR…'
                                           : widget.reconnectRequired
                                           ? 'Подключиться заново'
+                                          : _waitSeconds > 0
+                                          ? 'Получить QR через $_waitSeconds с'
                                           : 'Получить QR',
                                     ),
                                   )
                                 else
                                   Center(
-                                    child: IconButton.filled(
-                                      tooltip: 'Обновить QR',
-                                      style: IconButton.styleFrom(
-                                        minimumSize: const Size.square(64),
-                                        iconSize: 26,
-                                      ),
-                                      onPressed: widget.loading
-                                          ? null
-                                          : widget.onRefresh,
-                                      icon: widget.loading
-                                          ? const SizedBox.square(
-                                              dimension: 22,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                              ),
-                                            )
-                                          : const Icon(Icons.refresh_rounded),
+                                    child: Column(
+                                      children: [
+                                        IconButton.filled(
+                                          tooltip: 'Обновить QR',
+                                          style: IconButton.styleFrom(
+                                            minimumSize: const Size.square(64),
+                                            iconSize: 26,
+                                          ),
+                                          onPressed:
+                                              widget.loading || _waitSeconds > 0
+                                              ? null
+                                              : widget.onRefresh,
+                                          icon: widget.loading
+                                              ? const SizedBox.square(
+                                                  dimension: 22,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                      ),
+                                                )
+                                              : const Icon(
+                                                  Icons.refresh_rounded,
+                                                ),
+                                        ),
+                                        if (_waitSeconds > 0) ...[
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'Обновить через $_waitSeconds с',
+                                            style: theme.textTheme.bodySmall,
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   ),
                               ],

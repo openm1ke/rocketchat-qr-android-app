@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pass_widget_title">QR-пропуск</string>
+    <string name="pass_widget_description">Последний QR-код и показ поверх рабочего стола</string>
+    <string name="pass_widget_qr_description">QR-пропуск</string>
+    <string name="pass_widget_empty">Получите QR в приложении</string>
+    <string name="pass_widget_open">Нажмите, чтобы увеличить</string>
+</resources>

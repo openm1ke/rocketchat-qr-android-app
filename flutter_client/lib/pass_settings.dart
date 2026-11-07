@@ -12,11 +12,13 @@ class PassSettings extends StatefulWidget {
     required this.appearance,
     required this.onChanged,
     this.onEditToken,
+    this.onWidgets,
   });
 
   final PassAppearance appearance;
   final ValueChanged<PassAppearance> onChanged;
   final VoidCallback? onEditToken;
+  final VoidCallback? onWidgets;
 
   @override
   State<PassSettings> createState() => _PassSettingsState();
@@ -147,6 +149,18 @@ class _PassSettingsState extends State<PassSettings> {
                   onChanged: (v) => _change(_value.copyWith(haptics: v)),
                 ),
               ]),
+              if (widget.onWidgets != null)
+                _section('Рабочий стол', [
+                  ListTile(
+                    leading: const Icon(Icons.widgets_outlined),
+                    title: const Text('Виджет QR-кода'),
+                    subtitle: const Text(
+                      'Показ кода без основного экрана приложения',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: widget.onWidgets,
+                  ),
+                ]),
               _section('Аккаунт и сброс', [
                 ListTile(
                   leading: const Icon(Icons.help_outline_rounded),

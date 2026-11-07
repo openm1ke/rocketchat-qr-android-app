@@ -5,12 +5,13 @@ import 'dart:typed_data';
 
 import 'request_log.dart';
 
-enum PassError { authorization, network, timeout, bot, response }
+enum PassError { authorization, network, timeout, bot, response, rateLimit }
 
 class PassException implements Exception {
-  const PassException(this.kind);
+  const PassException(this.kind, {this.retryAt});
 
   final PassError kind;
+  final DateTime? retryAt;
 }
 
 typedef QrPass = ({Uint8List image, DateTime? expiresOn});
@@ -94,6 +95,8 @@ class RocketChatClient {
               message,
               incoming: true,
             );
+            final limited = _rateLimitError(message['error']);
+            if (limited != null) throw limited;
             switch (message['msg']) {
               case 'ping':
                 send({
@@ -245,6 +248,14 @@ class RocketChatClient {
     } on TimeoutException {
       RequestLog.instance.webSocketState(endpoint, 'timeout', failed: true);
       throw const PassException(PassError.timeout);
+    } on WebSocketException catch (error) {
+      final limited = error.httpStatusCode == HttpStatus.tooManyRequests;
+      RequestLog.instance.webSocketState(
+        endpoint,
+        limited ? 'rateLimit' : 'network',
+        failed: true,
+      );
+      throw PassException(limited ? PassError.rateLimit : PassError.network);
     } on IOException {
       RequestLog.instance.webSocketState(endpoint, 'network', failed: true);
       throw const PassException(PassError.network);
@@ -266,6 +277,55 @@ class RocketChatClient {
       http.close(force: true);
       if (socket != null) unawaited(socket.close());
     }
+  }
+
+  PassException? _rateLimitError(Object? error) {
+    if (error is! Map) return null;
+    final code = '${error['error'] ?? error['errorType'] ?? ''}'.toLowerCase();
+    if (code != '429' &&
+        code != 'too-many-requests' &&
+        code != 'error-too-many-requests') {
+      return null;
+    }
+    Object? details = error['details'];
+    if (details is String) {
+      try {
+        details = jsonDecode(details);
+      } on FormatException {
+        details = null;
+      }
+    }
+    final delay = details is Map ? details['timeToReset'] : null;
+    return PassException(
+      PassError.rateLimit,
+      retryAt: delay is num && delay.isFinite && delay > 0
+          ? DateTime.now().add(Duration(milliseconds: delay.ceil()))
+          : null,
+    );
+  }
+
+  DateTime? _httpRetryAt(HttpHeaders headers) {
+    DateTime? deadline;
+    final retry = headers.value(HttpHeaders.retryAfterHeader);
+    if (retry != null) {
+      final seconds = int.tryParse(retry);
+      if (seconds != null && seconds >= 0) {
+        deadline = DateTime.now().add(Duration(seconds: seconds));
+      } else {
+        try {
+          deadline = HttpDate.parse(retry);
+        } on FormatException {
+          /* Ignore invalid date. */
+        }
+      }
+    }
+    final reset = int.tryParse(headers.value('x-ratelimit-reset') ?? '');
+    if (reset != null) {
+      // Rocket.Chat specifies UTC epoch milliseconds for this header.
+      final candidate = DateTime.fromMillisecondsSinceEpoch(reset);
+      if (deadline == null || candidate.isAfter(deadline)) deadline = candidate;
+    }
+    return deadline;
   }
 
   DateTime? _readExpiryDate(String body) {
@@ -319,6 +379,12 @@ class RocketChatClient {
       ]);
       final response = await request.close();
       traceStatus = response.statusCode;
+      if (response.statusCode == HttpStatus.tooManyRequests) {
+        throw PassException(
+          PassError.rateLimit,
+          retryAt: _httpRetryAt(response.headers),
+        );
+      }
       if (response.statusCode == HttpStatus.unauthorized ||
           response.statusCode == HttpStatus.forbidden) {
         throw const PassException(PassError.authorization);

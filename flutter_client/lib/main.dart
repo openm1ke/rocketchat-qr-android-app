@@ -17,6 +17,9 @@ import 'pass_settings.dart';
 import 'qr_transition.dart';
 import 'rocket_chat_client.dart';
 import 'request_log.dart';
+import 'home_screen_widgets.dart';
+import 'widget_settings.dart';
+import 'pass_repository.dart';
 
 void main() => runApp(const CampusPassApp());
 
@@ -34,7 +37,10 @@ class CampusPassApp extends StatelessWidget {
 }
 
 class PassScreen extends StatefulWidget {
-  const PassScreen({super.key});
+  const PassScreen({super.key, this.passes, this.widgets});
+
+  final PassRepository? passes;
+  final HomeScreenWidgets? widgets;
 
   @override
   State<PassScreen> createState() => _PassScreenState();
@@ -43,14 +49,14 @@ class PassScreen extends StatefulWidget {
 class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
   static const _appearanceKey = 'pass_appearance_v1';
   static const _tokenKey = 'rocketchat_token';
-  // Matches the existing Android client's provisional expiry policy.
-  static const _lifetime = Duration(seconds: 30);
   final _storage = const FlutterSecureStorage();
-  final _client = RocketChatClient();
+  late final _passes = widget.passes ?? PassRepository();
+  late final _widgets = widget.widgets ?? HomeScreenWidgets();
   String? _token;
   Uint8List? _image;
   DateTime? _expires;
   DateTime? _expiresOn;
+  DateTime? _nextRequestAt;
   Timer? _expiryTimer;
   String? _error;
   bool _loading = true;
@@ -86,7 +92,7 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
     }
     if (state == AppLifecycleState.resumed &&
         _expires != null &&
-        !DateTime.now().isBefore(_expires!)) {
+        !_passes.now().isBefore(_expires!)) {
       _expire();
     }
   }
@@ -125,7 +131,11 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
   }
 
   void _saveAppearance(PassAppearance value) {
+    final updateWidget =
+        value.boostBrightness != _appearance.boostBrightness ||
+        value.scanSize != _appearance.scanSize;
     setState(() => _appearance = value);
+    if (updateWidget) unawaited(_publishWidget());
     _appearanceWrite = _appearanceWrite.then((_) async {
       try {
         await _storage.write(key: _appearanceKey, value: value.encode());
@@ -162,6 +172,7 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
         builder: (settingsContext) => PassSettings(
           appearance: _appearance,
           onChanged: _saveAppearance,
+          onWidgets: _openWidgetSettings,
           onEditToken: _token == null || _loading
               ? null
               : () {
@@ -176,21 +187,115 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _restoreToken() async {
+  void _openWidgetSettings() {
+    final brightness = switch (_appearance.theme) {
+      ThemeMode.dark => Brightness.dark,
+      ThemeMode.light => Brightness.light,
+      ThemeMode.system => MediaQuery.platformBrightnessOf(context),
+    };
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => Theme(
+          data: passTheme(brightness: brightness, accent: _appearance.accent),
+          child: HomeWidgetSettings(widgets: _widgets, onSync: _syncWidgets),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _clearWidget() async {
     try {
-      final token = await _storage.read(key: _tokenKey);
+      await _widgets.clear();
+    } catch (_) {
+      debugPrint('Unable to clear home-screen QR');
+    }
+  }
+
+  Future<bool> _publishWidget() async {
+    final image = _image;
+    final expires = _expires;
+    if (image == null || expires == null || !_passes.now().isBefore(expires)) {
+      await _clearWidget();
+      return true;
+    }
+    try {
+      await _widgets.publish(
+        WidgetPass(
+          image: image,
+          expiresAt: expires,
+          expiresOn: _expiresOn,
+          boostBrightness: _appearance.boostBrightness,
+          scanSize: _appearance.scanSize,
+        ),
+      );
+      return true;
+    } catch (_) {
+      debugPrint('Unable to update home-screen QR');
+      return false;
+    }
+  }
+
+  Future<bool> _syncWidgets() async {
+    if (_image == null && _token != null && !_loading) await _refresh();
+    if (_image == null) return false;
+    return _publishWidget();
+  }
+
+  Future<void> _restoreToken() async {
+    String? token;
+    try {
+      token = await _storage.read(key: _tokenKey);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Не удалось прочитать сохранённый токен.';
+        });
+      }
+      return;
+    }
+    if (!mounted) return;
+    _token = token;
+    if (token == null) {
+      setState(() => _loading = false);
+      unawaited(_discardCache());
+      unawaited(_clearWidget());
+      return;
+    }
+    try {
+      final cached = await _passes.restore(token);
       if (!mounted) return;
-      setState(() {
-        _token = token;
-        _loading = false;
-      });
-      if (token != null) await _refresh();
+      if (cached != null) {
+        await _showPass(cached, token);
+        await _publishWidget();
+      } else {
+        await _passes.clearPass();
+        await _clearWidget();
+      }
     } catch (_) {
       if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = 'Не удалось прочитать сохранённый токен.';
-      });
+      await _discardCache();
+      await _clearWidget();
+      if (mounted) {
+        setState(
+          () => _error = 'Не удалось восстановить сохранённый QR. Получите код по кнопке ниже.',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _nextRequestAt = _passes.nextRequestAt;
+        });
+      }
+    }
+  }
+
+  Future<void> _discardCache() async {
+    try {
+      await _passes.clearPass();
+    } catch (_) {
+      debugPrint('Unable to clear cached QR');
     }
   }
 
@@ -205,6 +310,9 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
     }
     if (!mounted) return;
     _expiryTimer?.cancel();
+    unawaited(_clearWidget());
+    if (_token != token) await _discardCache();
+    if (!mounted) return;
     setState(() {
       _token = token;
       _image = null;
@@ -241,11 +349,37 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
   void _expire() {
     if (_expanded) _toggleScanMode();
     _expiryTimer?.cancel();
+    unawaited(_clearWidget());
+    unawaited(_discardCache());
     setState(() {
       _image = null;
       _expires = null;
       _expiresOn = null;
     });
+  }
+
+  Future<void> _showPass(CachedPass pass, String token) async {
+    Object? decodeError;
+    await precacheImage(
+      MemoryImage(pass.image),
+      context,
+      onError: (error, _) => decodeError = error,
+    );
+    if (decodeError case final error?) throw error;
+    if (!mounted || _token != token) return;
+    _expiryTimer?.cancel();
+    final remaining = pass.expiresAt.difference(_passes.now());
+    if (remaining <= Duration.zero) {
+      _expire();
+      return;
+    }
+    setState(() {
+      _image = pass.image;
+      _expires = pass.expiresAt;
+      _expiresOn = pass.expiresOn;
+      _reconnectRequired = false;
+    });
+    _expiryTimer = Timer(remaining, _expire);
   }
 
   Future<void> _refresh() async {
@@ -256,31 +390,17 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
       _error = null;
     });
     try {
-      final pass = await _client.requestPass(token);
-      final image = pass.image;
-      final expires = pass.expiresOn ?? DateTime.now().add(_lifetime);
-      if (!mounted) return;
-      Object? decodeError;
-      await precacheImage(
-        MemoryImage(image),
-        context,
-        onError: (error, _) => decodeError = error,
-      );
-      if (decodeError case final error?) throw error;
-      if (!mounted) return;
-      _expiryTimer?.cancel();
-      final remaining = expires.difference(DateTime.now());
-      if (remaining <= Duration.zero) {
-        _expire();
-        return;
+      final pass = await _passes.request(token);
+      if (!mounted || _token != token) return;
+      await _showPass(pass, token);
+      if (!mounted || _token != token) return;
+      if (!_passes.cachePersisted) {
+        setState(
+          () => _error =
+              'QR получен, но не удалось сохранить его для следующего запуска.',
+        );
       }
-      setState(() {
-        _image = image;
-        _expires = expires;
-        _expiresOn = pass.expiresOn;
-        _reconnectRequired = false;
-      });
-      _expiryTimer = Timer(remaining, _expire);
+      await _publishWidget();
     } on PassException catch (failure) {
       if (!mounted) return;
       if (failure.kind == PassError.authorization) {
@@ -296,14 +416,24 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
             'Rocket.Chat или бот не ответил вовремя. Повторите запрос.',
           PassError.bot => 'Rocket.Chat не смог выполнить команду бота.',
           PassError.response => 'В ответе бота не удалось прочитать QR-код.',
+          PassError.rateLimit =>
+            'Повторный запрос временно недоступен. Дождитесь окончания паузы.',
         },
       );
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Не удалось открыть изображение QR-кода.');
+        setState(
+          () => _error =
+              'Не удалось получить или сохранить QR. Повторите попытку позже.',
+        );
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _nextRequestAt = _passes.nextRequestAt;
+        });
+      }
     }
   }
 
@@ -369,6 +499,8 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
             loading: _loading,
             qr: _image == null ? null : _qrImage(_image!),
             expiresOn: _expiresOn,
+            nextRequestAt: _nextRequestAt,
+            now: _passes.now,
             error: _error,
             reconnectRequired: _reconnectRequired,
             backgroundPhoto: _backgroundPhoto,
