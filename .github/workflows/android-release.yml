@@ -39,6 +39,12 @@ jobs:
           flutter analyze --no-pub
           flutter test --no-pub
 
+      - name: Download verified Gradle distribution with retries
+        run: >-
+          python3 ../tools/prepare_ci_gradle.py
+          --properties android/gradle/wrapper/gradle-wrapper.properties
+          --download-dir "$RUNNER_TEMP/gradle-bootstrap"
+
       - name: Build and verify signed APK
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
