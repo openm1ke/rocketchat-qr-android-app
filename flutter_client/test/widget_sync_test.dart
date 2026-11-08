@@ -112,8 +112,11 @@ void main() {
       expect(find.text('Обновить через 30 с'), findsOneWidget);
       await showPass(tester, widgets, passes: repository(), request: false);
       expect(find.byType(QrTransition), findsOneWidget);
-      final refresh = find.widgetWithIcon(IconButton, Icons.refresh_rounded);
-      expect(tester.widget<IconButton>(refresh).onPressed, isNull);
+      final waiting = find.ancestor(
+        of: find.text('Обновить через 30 с'),
+        matching: find.byWidgetPredicate((widget) => widget is FilledButton),
+      );
+      expect(tester.widget<FilledButton>(waiting).onPressed, isNull);
       expect(client.calls, 1);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
@@ -123,6 +126,7 @@ void main() {
       await tester.pump(const Duration(seconds: 31));
       await tester.pumpAndSettle();
       expect(client.calls, 1);
+      final refresh = find.widgetWithIcon(IconButton, Icons.refresh_rounded);
       await tester.ensureVisible(refresh);
       await tester.tap(refresh);
       await tester.pumpAndSettle();

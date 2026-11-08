@@ -102,11 +102,20 @@ void main() {
         ),
       ),
     );
+    final waiting = find.ancestor(
+      of: find.text('Обновить через 30 с'),
+      matching: find.byWidgetPredicate((widget) => widget is FilledButton),
+    );
+    expect(tester.widget<FilledButton>(waiting).onPressed, isNull);
+    await tester.ensureVisible(waiting);
+    await tester.tap(waiting);
+    expect(requests, 0);
+    now = now.add(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Обновить через 29 с'), findsOneWidget);
+    now = now.add(const Duration(seconds: 29));
+    await tester.pump(const Duration(seconds: 29));
     final refresh = find.widgetWithIcon(IconButton, Icons.refresh_rounded);
-    expect(tester.widget<IconButton>(refresh).onPressed, isNull);
-    expect(find.text('Обновить через 30 с'), findsOneWidget);
-    now = now.add(const Duration(seconds: 30));
-    await tester.pump(const Duration(seconds: 30));
     await tester.ensureVisible(refresh);
     await tester.tap(refresh);
     expect(requests, 1);

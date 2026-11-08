@@ -412,40 +412,41 @@ class _PassHomeState extends State<PassHome> with WidgetsBindingObserver {
                                   )
                                 else
                                   Center(
-                                    child: Column(
-                                      children: [
-                                        IconButton.filled(
-                                          tooltip: 'Обновить QR',
-                                          style: IconButton.styleFrom(
-                                            minimumSize: const Size.square(64),
-                                            iconSize: 26,
+                                    child: _waitSeconds > 0
+                                        ? FilledButton.icon(
+                                            onPressed: null,
+                                            icon: const Icon(
+                                              Icons.schedule_rounded,
+                                              size: 20,
+                                            ),
+                                            label: Text(
+                                              'Обновить через $_waitSeconds с',
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          )
+                                        : IconButton.filled(
+                                            tooltip: 'Обновить QR',
+                                            style: IconButton.styleFrom(
+                                              minimumSize: const Size.square(
+                                                64,
+                                              ),
+                                              iconSize: 26,
+                                            ),
+                                            onPressed: widget.loading
+                                                ? null
+                                                : widget.onRefresh,
+                                            icon: widget.loading
+                                                ? const SizedBox.square(
+                                                    dimension: 22,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                        ),
+                                                  )
+                                                : const Icon(
+                                                    Icons.refresh_rounded,
+                                                  ),
                                           ),
-                                          onPressed:
-                                              widget.loading || _waitSeconds > 0
-                                              ? null
-                                              : widget.onRefresh,
-                                          icon: widget.loading
-                                              ? const SizedBox.square(
-                                                  dimension: 22,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                      ),
-                                                )
-                                              : const Icon(
-                                                  Icons.refresh_rounded,
-                                                ),
-                                        ),
-                                        if (_waitSeconds > 0) ...[
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'Обновить через $_waitSeconds с',
-                                            style: theme.textTheme.bodySmall,
-                                            textAlign: TextAlign.center,
-                                          ),
-                                        ],
-                                      ],
-                                    ),
                                   ),
                               ],
                             ),

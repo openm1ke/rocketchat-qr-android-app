@@ -181,6 +181,11 @@ class RocketChatClient {
                 }
                 final body = event['msg'];
                 if (body is String) {
+                  if (sender is Map &&
+                      sender['username'] == 'qr-code-generator.bot') {
+                    final limited = _botWaitError(body);
+                    if (limited != null) throw limited;
+                  }
                   final date = _readExpiryDate(body);
                   if (date != null) {
                     expiresOn = date;
@@ -277,6 +282,24 @@ class RocketChatClient {
       http.close(force: true);
       if (socket != null) unawaited(socket.close());
     }
+  }
+
+  PassException? _botWaitError(String body) {
+    final match = RegExp(
+      r'^Please\s+wait\s+(\d+)\s+seconds?\s+before\s+calling\s+the\s+command\s+again[.!]?$',
+      caseSensitive: false,
+    ).firstMatch(body.trim());
+    if (match == null) return null;
+    final seconds = int.tryParse(match[1]!);
+    DateTime? retryAt;
+    if (seconds != null) {
+      try {
+        retryAt = DateTime.now().add(Duration(seconds: seconds));
+      } on ArgumentError {
+        // Keep the local minimum pause if the bot sends an invalid duration.
+      }
+    }
+    return PassException(PassError.rateLimit, retryAt: retryAt);
   }
 
   PassException? _rateLimitError(Object? error) {

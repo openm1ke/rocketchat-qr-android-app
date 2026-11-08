@@ -4,6 +4,9 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:campus_pass/rocket_chat_client.dart';
 import 'package:campus_pass/request_log.dart';
+import 'package:campus_pass/pass_repository.dart';
+
+import 'support/pass_fixtures.dart';
 
 void main() {
   late HttpServer server;
@@ -19,7 +22,13 @@ void main() {
 
   tearDown(() async => server.close(force: true));
 
-  void serveLimited(String stage, {String? retryAfter, DateTime? reset}) {
+  void serveLimited(
+    String stage, {
+    String? retryAfter,
+    DateTime? reset,
+    String? botWait,
+    void Function()? onCommand,
+  }) {
     server.listen((request) async {
       if (stage == 'handshake' ||
           request.uri.path == '/file-upload/limited.png') {
@@ -70,6 +79,7 @@ void main() {
               'result': {'rid': 'pass-room'},
             });
           } else if (data['id'] == 'enter') {
+            onCommand?.call();
             send({
               'msg': 'changed',
               'collection': 'stream-room-messages',
@@ -78,12 +88,14 @@ void main() {
                   {
                     'rid': 'pass-room',
                     'u': {'username': 'qr-code-generator.bot'},
-                    'attachments': [
-                      {
-                        'image_type': 'image/png',
-                        'image_url': '/file-upload/limited.png',
-                      },
-                    ],
+                    'msg': ?botWait,
+                    if (botWait == null)
+                      'attachments': [
+                        {
+                          'image_type': 'image/png',
+                          'image_url': '/file-upload/limited.png',
+                        },
+                      ],
                   },
                 ],
               },
@@ -92,6 +104,67 @@ void main() {
         }
       }
     });
+  }
+
+  for (final seconds in [1, 24, 75]) {
+    test('bot text requests an immediate $seconds-second wait', () async {
+      serveLimited(
+        'bot-message',
+        botWait:
+            'Please wait $seconds ${seconds == 1 ? 'second' : 'seconds'} before calling the command again.',
+      );
+      final started = DateTime.now();
+      await expectLater(
+        client.requestPass('test-token').timeout(const Duration(seconds: 2)),
+        throwsA(
+          isA<PassException>()
+              .having((e) => e.kind, 'kind', PassError.rateLimit)
+              .having(
+                (e) => e.retryAt!.difference(started).inMilliseconds,
+                'bot pause',
+                greaterThanOrEqualTo(seconds * 1000),
+              ),
+        ),
+      );
+    });
+  }
+
+  for (final seconds in [24, 75]) {
+    test(
+      'bot wait $seconds persists the minimum pause and protects cached QR on relaunch',
+      () async {
+        var commands = 0;
+        serveLimited(
+          'bot-message',
+          botWait:
+              'Please wait $seconds seconds before calling the command again.',
+          onCommand: () => commands++,
+        );
+        final now = DateTime.now();
+        final store = MemoryPassStore()
+          ..pass = CachedPass(
+            owner: CachedPass.ownerFor('test-token'),
+            image: testPng,
+            receivedAt: now,
+            expiresAt: now.add(const Duration(days: 1)),
+          );
+        PassRepository repository() =>
+            PassRepository(client: client, store: store);
+        final limited = isA<PassException>().having(
+          (e) => e.kind,
+          'kind',
+          PassError.rateLimit,
+        );
+        await expectLater(repository().request('test-token'), throwsA(limited));
+        expect(
+          store.retryAt!.difference(now).inMilliseconds,
+          greaterThanOrEqualTo((seconds < 30 ? 30 : seconds) * 1000),
+        );
+        expect((await repository().restore('test-token'))?.image, testPng);
+        await expectLater(repository().request('test-token'), throwsA(limited));
+        expect(commands, 1);
+      },
+    );
   }
 
   for (final stage in ['login', 'enter']) {
@@ -228,7 +301,7 @@ void main() {
                             'rid': 'pass-room',
                             'u': {'username': sender},
                             'msg': sender == 'other-user'
-                                ? 'The QR code data:image/png;base64,invalid'
+                                ? 'Please wait 9999 seconds before calling the command again.'
                                 : attached
                                 ? ''
                                 : 'The QR code <img src="data:image/png;base64,$png">',
