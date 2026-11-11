@@ -79,6 +79,24 @@ class HomeScreenWidgets {
   final MethodChannel _channel;
   Future<void> _writes = Future.value();
 
+  void setWidgetTapHandler(Future<void> Function()? handler) {
+    _channel.setMethodCallHandler(
+      handler == null
+          ? null
+          : (call) async {
+              if (call.method == 'widgetTapped') await handler();
+            },
+    );
+  }
+
+  Future<bool> takeWidgetTap() async {
+    try {
+      return await _channel.invokeMethod<bool>('takeWidgetTap') ?? false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   Future<T> _ordered<T>(Future<T> Function() operation) {
     final next = _writes.then((_) => operation());
     _writes = next.then<void>((_) {}, onError: (Object _, StackTrace _) {});

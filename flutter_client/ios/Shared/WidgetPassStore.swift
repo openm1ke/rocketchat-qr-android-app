@@ -17,6 +17,7 @@ struct StoredWidgetPass: Codable {
 }
 
 enum WidgetPassStore {
+    static let openPassURL = URL(string: "s21-campus-pass://widget/open")!
     static let appGroup = "group.s21.campusPass.widgets"
     static let kind = "CampusPassQR"
 

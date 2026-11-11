@@ -52,6 +52,7 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
   final _storage = const FlutterSecureStorage();
   late final _passes = widget.passes ?? PassRepository();
   late final _widgets = widget.widgets ?? HomeScreenWidgets();
+  late final Future<void> _startup;
   String? _token;
   Uint8List? _image;
   DateTime? _expires;
@@ -71,16 +72,40 @@ class _PassScreenState extends State<PassScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    unawaited(_restoreAppearance());
-    unawaited(_restoreToken());
+    _startup = Future.wait([_restoreAppearance(), _restoreToken()]);
+    _widgets.setWidgetTapHandler(_handleWidgetTap);
+    unawaited(_handleWidgetTap());
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _widgets.setWidgetTapHandler(null);
     _expiryTimer?.cancel();
     if (_expanded) unawaited(_setScanBrightness(false));
     super.dispose();
+  }
+
+  Future<void> _handleWidgetTap() async {
+    await _startup;
+    if (!mounted) return;
+    final bool tapped;
+    try {
+      tapped = await _widgets.takeWidgetTap();
+    } on PlatformException {
+      return;
+    }
+    if (!mounted || !tapped) return;
+
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    if (_editing) setState(() => _editing = false);
+    final expires = _expires;
+    if (_image != null && expires != null && _passes.now().isBefore(expires)) {
+      if (!_expanded) _toggleScanMode();
+      return;
+    }
+    if (_image != null) _expire();
+    if (!_reconnectRequired) await _refresh();
   }
 
   @override

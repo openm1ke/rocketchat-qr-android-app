@@ -1,6 +1,7 @@
 import 'package:campus_pass/home_screen_widgets.dart';
 import 'package:campus_pass/main.dart';
 import 'package:campus_pass/pass_appearance.dart';
+import 'package:campus_pass/pass_home.dart';
 import 'package:campus_pass/pass_repository.dart';
 import 'package:campus_pass/qr_transition.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +13,24 @@ import 'support/pass_fixtures.dart';
 class MemoryWidgets extends HomeScreenWidgets {
   WidgetPass? pass;
   bool fail = false;
+  bool pendingTap = false;
+  Future<void> Function()? onTap;
+
+  @override
+  void setWidgetTapHandler(Future<void> Function()? handler) => onTap = handler;
+
+  @override
+  Future<bool> takeWidgetTap() async {
+    final tapped = pendingTap;
+    pendingTap = false;
+    return tapped;
+  }
+
+  Future<void> tapWidget() async {
+    pendingTap = true;
+    await onTap?.call();
+  }
+
   @override
   Future<void> publish(WidgetPass next) async {
     if (fail) throw StateError('Storage failed');
@@ -155,6 +174,64 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(QrTransition), findsOneWidget);
       expect(client.calls, 2);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'a cold widget tap shows the valid cache full screen without a request',
+    (tester) async {
+      final store = MemoryPassStore();
+      final now = DateTime.now();
+      store.pass = CachedPass(
+        owner: CachedPass.ownerFor('test-personal-token'),
+        image: testPng,
+        receivedAt: now,
+        expiresAt: now.add(const Duration(hours: 1)),
+      );
+      final client = FixturePassClient();
+      final widgets = MemoryWidgets()..pendingTap = true;
+      await showPass(
+        tester,
+        widgets,
+        passes: PassRepository(client: client, store: store),
+        request: false,
+      );
+      expect(find.byType(QrTransition), findsOneWidget);
+      expect(find.byType(PassHome), findsNothing);
+      expect(client.calls, 0);
+      expect(widgets.pendingTap, false);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'an expired widget starts one refresh and a second tap during cooldown does not call the bot',
+    (tester) async {
+      final now = DateTime.now();
+      final store = MemoryPassStore()
+        ..retryAt = now.add(const Duration(seconds: 20));
+      final client = FixturePassClient();
+      final widgets = MemoryWidgets()..pendingTap = true;
+      var clock = now;
+      final passes = PassRepository(
+        client: client,
+        store: store,
+        now: () => clock,
+      );
+      await showPass(tester, widgets, passes: passes, request: false);
+      expect(find.text('Получить QR через 20 с'), findsOneWidget);
+      expect(client.calls, 0);
+      clock = now.add(const Duration(seconds: 21));
+      await tester.pump(const Duration(seconds: 21));
+      await widgets.tapWidget();
+      await tester.pumpAndSettle();
+      expect(client.calls, 1);
+      expect(widgets.pass?.image, testPng);
+      await widgets.tapWidget();
+      await tester.pumpAndSettle();
+      expect(client.calls, 1);
+      expect(find.byType(PassHome), findsNothing);
       await tester.pumpWidget(const SizedBox());
     },
   );

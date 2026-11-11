@@ -60,26 +60,22 @@ void main() {
     },
   );
 
-  testWidgets(
-    'iOS explains the large widget and never requests app launching or pinning',
-    (tester) async {
-      final widgets = FakeWidgets('ios');
-      await tester.pumpWidget(
-        MaterialApp(
-          home: HomeWidgetSettings(widgets: widgets, onSync: () async => true),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.textContaining('оставляет вас на рабочем столе'),
-        findsOneWidget,
-      );
-      await tester.tap(find.text('Обновить виджет'));
-      await tester.pumpAndSettle();
-      expect(widgets.actions, isEmpty);
-      expect(find.text('Содержимое виджета обновлено'), findsOneWidget);
-    },
-  );
+  testWidgets('iOS explains widget taps and syncs without asking to pin', (
+    tester,
+  ) async {
+    final widgets = FakeWidgets('ios');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeWidgetSettings(widgets: widgets, onSync: () async => true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('показать QR на весь экран'), findsOneWidget);
+    await tester.tap(find.text('Обновить виджет'));
+    await tester.pumpAndSettle();
+    expect(widgets.actions, isEmpty);
+    expect(find.text('Содержимое виджета обновлено'), findsOneWidget);
+  });
 
   testWidgets('widget setup fits a narrow phone with large text', (
     tester,

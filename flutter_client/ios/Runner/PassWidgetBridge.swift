@@ -3,10 +3,21 @@ import UIKit
 import WidgetKit
 
 final class PassWidgetBridge {
+    private static var pendingWidgetTap = false
+    private static weak var active: PassWidgetBridge?
     private let channel: FlutterMethodChannel
+
+    @discardableResult
+    static func handleWidgetURL(_ url: URL) -> Bool {
+        guard url == WidgetPassStore.openPassURL else { return false }
+        pendingWidgetTap = true
+        active?.channel.invokeMethod("widgetTapped", arguments: nil)
+        return true
+    }
 
     init(messenger: FlutterBinaryMessenger) {
         channel = FlutterMethodChannel(name: "s21.campus_pass/widgets", binaryMessenger: messenger)
+        Self.active = self
         channel.setMethodCallHandler { [weak self] call, result in
             guard let self = self else { result(FlutterMethodNotImplemented); return }
             self.handle(call, result: result)
@@ -16,6 +27,10 @@ final class PassWidgetBridge {
     private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         do {
             switch call.method {
+            case "takeWidgetTap":
+                let tapped = Self.pendingWidgetTap
+                Self.pendingWidgetTap = false
+                result(tapped)
             case "publish":
                 guard let args = call.arguments as? [String: Any],
                       let bytes = args["image"] as? FlutterStandardTypedData,

@@ -1,4 +1,3 @@
-import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -29,18 +28,6 @@ struct PassTimelineProvider: TimelineProvider {
     }
 }
 
-struct KeepPassOnHomeScreen: AppIntent {
-    static var title: LocalizedStringResource = "Показать QR в виджете"
-    static var openAppWhenRun: Bool = false
-
-    func perform() async throws -> some IntentResult {
-        // An interactive button covers the entire widget. It reloads its
-        // current/expired state instead of launching the containing app.
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetPassStore.kind)
-        return .result()
-    }
-}
-
 struct PassWidgetView: View {
     let entry: PassEntry
     private let ink = Color(red: 17/255, green: 19/255, blue: 24/255)
@@ -58,41 +45,39 @@ struct PassWidgetView: View {
     }
 
     var body: some View {
-        Button(intent: KeepPassOnHomeScreen()) {
-            VStack(spacing: 8) {
-                HStack {
-                    Text("QR-ПРОПУСК").font(.system(size: 12, weight: .semibold))
-                    Spacer()
-                    Image(systemName: "house.fill").font(.system(size: 12))
-                }
-                .foregroundStyle(lime)
-                if let pass = entry.pass, pass.isValid(at: entry.date),
-                   let image = WidgetPassStore.qrTile(pass.image) {
-                    qrImage(image)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .privacySensitive()
-                        .accessibilityLabel("QR-пропуск")
-                    if let expiry = pass.expiresOn {
-                        Text("До \(Date(timeIntervalSince1970: Double(expiry)/1000).formatted(date: .numeric, time: .omitted))")
-                            .font(.system(size: 11)).foregroundStyle(.white.opacity(0.8))
-                    } else {
-                        Text("Временный QR").font(.system(size: 11)).foregroundStyle(.white.opacity(0.8))
-                    }
-                } else {
-                    Spacer()
-                    Image(systemName: "qrcode").font(.system(size: 56)).foregroundStyle(lime)
-                    Text("Получите новый QR в приложении")
-                        .font(.system(size: 16, weight: .medium))
-                        .multilineTextAlignment(.center).foregroundStyle(.white)
-                    Spacer()
-                }
+        VStack(spacing: 8) {
+            HStack {
+                Text("QR-ПРОПУСК").font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Image(systemName: "house.fill").font(.system(size: 12))
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .background(ink)
+            .foregroundStyle(lime)
+            if let pass = entry.pass, pass.isValid(at: entry.date),
+               let image = WidgetPassStore.qrTile(pass.image) {
+                qrImage(image)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .privacySensitive()
+                    .accessibilityLabel("QR-пропуск")
+                if let expiry = pass.expiresOn {
+                    Text("До \(Date(timeIntervalSince1970: Double(expiry)/1000).formatted(date: .numeric, time: .omitted))")
+                        .font(.system(size: 11)).foregroundStyle(.white.opacity(0.8))
+                } else {
+                    Text("Временный QR").font(.system(size: 11)).foregroundStyle(.white.opacity(0.8))
+                }
+            } else {
+                Spacer()
+                Image(systemName: "qrcode").font(.system(size: 56)).foregroundStyle(lime)
+                Text("Обновите QR в приложении")
+                    .font(.system(size: 16, weight: .medium))
+                    .multilineTextAlignment(.center).foregroundStyle(.white)
+                Spacer()
+            }
         }
-        .buttonStyle(.plain)
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .background(ink)
+        .widgetURL(WidgetPassStore.openPassURL)
         .containerBackground(ink, for: .widget)
     }
 }
@@ -106,7 +91,7 @@ struct CampusPassWidget: Widget {
             PassWidgetView(entry: entry)
         }
         .configurationDisplayName("QR-пропуск")
-        .description("Крупный QR на рабочем столе. Нажатие не открывает приложение.")
+        .description("Нажмите, чтобы показать QR на весь экран или обновить пропуск.")
         .supportedFamilies([.systemLarge])
         .contentMarginsDisabled()
         .containerBackgroundRemovable(false)

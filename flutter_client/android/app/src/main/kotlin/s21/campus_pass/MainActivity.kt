@@ -10,13 +10,30 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    private var widgetChannel: MethodChannel? = null
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == PassWidgetProvider.ACTION_OPEN) {
+            setIntent(intent)
+            widgetChannel?.invokeMethod("widgetTapped", null)
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "s21.campus_pass/widgets")
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "s21.campus_pass/widgets")
+        widgetChannel = channel
+        channel
             .setMethodCallHandler { call, result ->
                 try {
                     val manager = AppWidgetManager.getInstance(this)
                     when (call.method) {
+                        "takeWidgetTap" -> {
+                            val tapped = intent?.action == PassWidgetProvider.ACTION_OPEN
+                            if (tapped) intent.action = Intent.ACTION_MAIN
+                            result.success(tapped)
+                        }
                         "publish" -> {
                             PassWidgetStore.publish(this, call.arguments as Map<*, *>)
                             QrOverlay.dismiss()

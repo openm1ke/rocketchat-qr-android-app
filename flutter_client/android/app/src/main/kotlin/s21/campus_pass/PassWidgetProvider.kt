@@ -2,6 +2,7 @@ package s21.campus_pass
 
 import android.app.AlarmManager
 import android.app.PendingIntent
+import android.app.KeyguardManager
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
@@ -27,7 +28,16 @@ class PassWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
-            ACTION_SHOW -> QrOverlay.show(context.applicationContext)
+            ACTION_SHOW -> {
+                if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return
+                val pass = PassWidgetStore.read(context)
+                if (pass != null) {
+                    QrOverlay.show(context.applicationContext, pass)
+                } else {
+                    updateAll(context)
+                    context.startActivity(openPassIntent(context))
+                }
+            }
             ACTION_EXPIRE, Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED -> {
                 if (PassWidgetStore.read(context) == null) QrOverlay.dismiss()
                 updateAll(context)
@@ -38,9 +48,14 @@ class PassWidgetProvider : AppWidgetProvider() {
 
     companion object {
         const val ACTION_SHOW = "s21.campus_pass.SHOW_WIDGET_QR"
+        const val ACTION_OPEN = "s21.campus_pass.OPEN_WIDGET_PASS"
         private const val ACTION_EXPIRE = "s21.campus_pass.EXPIRE_WIDGET_QR"
 
         fun component(context: Context) = ComponentName(context, PassWidgetProvider::class.java)
+
+        private fun openPassIntent(context: Context) =
+            Intent(context, MainActivity::class.java).setAction(ACTION_OPEN)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
 
         private fun expiryIntent(context: Context) = PendingIntent.getBroadcast(
             context, 71, Intent(context, PassWidgetProvider::class.java).setAction(ACTION_EXPIRE),
@@ -53,10 +68,14 @@ class PassWidgetProvider : AppWidgetProvider() {
             val pass = PassWidgetStore.read(context)
             for (id in ids) {
                 val views = RemoteViews(context.packageName, R.layout.pass_widget)
-                val open = PendingIntent.getBroadcast(
-                    context, 72, Intent(context, PassWidgetProvider::class.java).setAction(ACTION_SHOW),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                )
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                val open = if (pass == null) {
+                    PendingIntent.getActivity(context, 73, openPassIntent(context), flags)
+                } else {
+                    PendingIntent.getBroadcast(
+                        context, 72, Intent(context, PassWidgetProvider::class.java).setAction(ACTION_SHOW), flags,
+                    )
+                }
                 views.setOnClickPendingIntent(R.id.widget_root, open)
                 views.setViewVisibility(R.id.widget_qr, if (pass != null) View.VISIBLE else View.GONE)
                 views.setViewVisibility(R.id.widget_empty, if (pass == null) View.VISIBLE else View.GONE)
@@ -76,7 +95,7 @@ class PassWidgetProvider : AppWidgetProvider() {
                         else "Нажмите, чтобы увеличить"
                     views.setTextViewText(R.id.widget_status, status)
                 } else {
-                    views.setTextViewText(R.id.widget_status, "Получите новый код в приложении")
+                    views.setTextViewText(R.id.widget_status, "Нажмите, чтобы обновить")
                 }
                 manager.updateAppWidget(id, views)
             }

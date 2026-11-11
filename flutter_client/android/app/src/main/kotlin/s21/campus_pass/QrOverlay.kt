@@ -48,14 +48,8 @@ object QrOverlay {
         manager = null
     }
 
-    fun show(context: Context) {
+    fun show(context: Context, pass: StoredWidgetPass) {
         dismiss()
-        val pass = PassWidgetStore.read(context)
-        if (pass == null) {
-            Toast.makeText(context, "Срок QR истёк. Получите новый код в приложении.", Toast.LENGTH_LONG).show()
-            PassWidgetProvider.updateAll(context)
-            return
-        }
         if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) return
         if (!Settings.canDrawOverlays(context)) {
             Toast.makeText(context, "Разрешите показ поверх экрана: Настройки пропуска → Виджет QR-кода", Toast.LENGTH_LONG).show()
