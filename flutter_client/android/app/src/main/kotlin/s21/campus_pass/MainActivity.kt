@@ -29,6 +29,12 @@ class MainActivity : FlutterActivity() {
                 try {
                     val manager = AppWidgetManager.getInstance(this)
                     when (call.method) {
+                        "readAppearance" -> result.success(WidgetAppearanceStore.read(this).message())
+                        "saveAppearance" -> {
+                            WidgetAppearanceStore.save(this, call.arguments as Map<*, *>)
+                            PassWidgetProvider.updateAll(this)
+                            result.success(null)
+                        }
                         "takeWidgetTap" -> {
                             val tapped = intent?.action == PassWidgetProvider.ACTION_OPEN
                             if (tapped) intent.action = Intent.ACTION_MAIN

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'home_screen_widgets.dart';
+import 'pass_color_picker.dart';
+import 'widget_appearance.dart';
 
 class HomeWidgetSettings extends StatefulWidget {
   const HomeWidgetSettings({
@@ -22,6 +24,7 @@ class _HomeWidgetSettingsState extends State<HomeWidgetSettings>
     with WidgetsBindingObserver {
   WidgetCapabilities _capabilities = const WidgetCapabilities();
   WidgetPass? _pass;
+  WidgetAppearance _appearance = const WidgetAppearance();
   bool _busy = true;
   String? _error;
   Timer? _expiry;
@@ -49,6 +52,9 @@ class _HomeWidgetSettingsState extends State<HomeWidgetSettings>
     try {
       final capabilities = await widget.widgets.capabilities();
       final pass = capabilities.supported ? await widget.widgets.read() : null;
+      final appearance = capabilities.supported
+          ? await widget.widgets.readAppearance()
+          : const WidgetAppearance();
       if (!mounted) return;
       _expiry?.cancel();
       if (pass != null) {
@@ -59,6 +65,7 @@ class _HomeWidgetSettingsState extends State<HomeWidgetSettings>
       setState(() {
         _capabilities = capabilities;
         _pass = pass;
+        _appearance = appearance;
         _busy = false;
       });
     } catch (_) {
@@ -69,6 +76,107 @@ class _HomeWidgetSettingsState extends State<HomeWidgetSettings>
         });
       }
     }
+  }
+
+  Future<void> _saveAppearance(WidgetAppearance value) async {
+    final previous = _appearance;
+    setState(() {
+      _appearance = value;
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.widgets.saveAppearance(value);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _appearance = previous;
+          _error =
+              'Не удалось сохранить оформление виджета. Повторите попытку.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _pickColor({required bool background}) async {
+    final color = await showDialog<Color>(
+      context: context,
+      builder: (_) => PassColorDialog(
+        color: background ? _appearance.background : _appearance.foreground,
+      ),
+    );
+    if (!mounted || color == null) return;
+    await _saveAppearance(
+      background
+          ? _appearance.copyWith(background: color)
+          : _appearance.copyWith(foreground: color),
+    );
+  }
+
+  Widget _colorTile(String title, Color color, {required bool background}) =>
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(color: Theme.of(context).colorScheme.outline),
+          ),
+        ),
+        title: Text(title),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _busy ? null : () => _pickColor(background: background),
+      );
+
+  Widget _preview(WidgetPass? pass) {
+    final logo = _appearance.content == WidgetContent.logo || pass == null;
+    return Container(
+      key: const ValueKey('widget-preview'),
+      width: 224,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _appearance.background,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        children: [
+          AspectRatio(
+            aspectRatio: 1,
+            child: logo
+                ? Image.asset(
+                    'assets/branding/widget_logo.png',
+                    semanticLabel: 'Логотип School 21',
+                  )
+                : ColorFiltered(
+                    colorFilter: _appearance.qrFilter,
+                    child: ColoredBox(
+                      color: Colors.white,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Image.memory(
+                          pass.image,
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.none,
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            pass == null
+                ? 'Обновите QR в приложении'
+                : 'Нажмите, чтобы открыть QR',
+            style: TextStyle(color: _appearance.textColor, fontSize: 12),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _perform() async {
@@ -159,52 +267,42 @@ class _HomeWidgetSettingsState extends State<HomeWidgetSettings>
           const SizedBox(height: 24),
           Text('Предпросмотр', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
-          Center(
-            child: Container(
-              width: 224,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: colors.surfaceContainer,
-                borderRadius: BorderRadius.circular(24),
+          Center(child: _preview(pass)),
+          const SizedBox(height: 24),
+          SegmentedButton<WidgetContent>(
+            segments: const [
+              ButtonSegment(
+                value: WidgetContent.logo,
+                label: Text('Логотип'),
+                icon: Icon(Icons.apps_rounded),
               ),
-              child: pass == null
-                  ? Column(
-                      children: [
-                        const Icon(Icons.qr_code_2_rounded, size: 64),
-                        const SizedBox(height: 12),
-                        Text(
-                          _busy
-                              ? 'Загружаем…'
-                              : 'Сначала получите QR в приложении',
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    )
-                  : Column(
-                      children: [
-                        ColoredBox(
-                          color: Colors.white,
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: AspectRatio(
-                              aspectRatio: 1,
-                              child: Image.memory(
-                                pass.image,
-                                fit: BoxFit.contain,
-                                filterQuality: FilterQuality.none,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Последний полученный QR',
-                          style: Theme.of(context).textTheme.labelMedium,
-                        ),
-                      ],
-                    ),
-            ),
+              ButtonSegment(
+                value: WidgetContent.qr,
+                label: Text('QR-код'),
+                icon: Icon(Icons.qr_code_2_rounded),
+              ),
+            ],
+            selected: {_appearance.content},
+            onSelectionChanged: _busy
+                ? null
+                : (selection) => _saveAppearance(
+                    _appearance.copyWith(content: selection.single),
+                  ),
           ),
+          const SizedBox(height: 16),
+          _colorTile('Цвет фона', _appearance.background, background: true),
+          if (_appearance.content == WidgetContent.qr) ...[
+            _colorTile(
+              'Цвет QR-кода',
+              _appearance.foreground,
+              background: false,
+            ),
+            if (_appearance.contrast < 4.5)
+              Text(
+                'Цвета слишком близки — QR может плохо считываться.',
+                style: TextStyle(color: colors.error),
+              ),
+          ],
           const SizedBox(height: 24),
           if (!_busy && !_capabilities.supported)
             const Text(

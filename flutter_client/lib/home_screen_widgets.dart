@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import 'widget_appearance.dart';
+
 class WidgetPass {
   const WidgetPass({
     required this.image,
@@ -112,6 +114,17 @@ class HomeScreenWidgets {
   });
 
   Future<void> clear() => _ordered(() => _channel.invokeMethod<void>('clear'));
+
+  Future<WidgetAppearance> readAppearance() async {
+    await _writes;
+    return WidgetAppearance.fromMessage(
+      await _channel.invokeMapMethod<Object?, Object?>('readAppearance'),
+    );
+  }
+
+  Future<void> saveAppearance(WidgetAppearance appearance) => _ordered(
+    () => _channel.invokeMethod<void>('saveAppearance', appearance.toMessage()),
+  );
 
   Future<WidgetPass?> read() async {
     await _writes;

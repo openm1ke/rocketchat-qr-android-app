@@ -4,6 +4,7 @@ import WidgetKit
 struct PassEntry: TimelineEntry {
     let date: Date
     let pass: StoredWidgetPass?
+    var appearance = WidgetAppearance()
 }
 
 struct PassTimelineProvider: TimelineProvider {
@@ -12,17 +13,19 @@ struct PassTimelineProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (PassEntry) -> Void) {
-        completion(PassEntry(date: Date(), pass: WidgetPassStore.read()))
+        completion(PassEntry(date: Date(), pass: WidgetPassStore.read(),
+                             appearance: WidgetPassStore.readAppearance()))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<PassEntry>) -> Void) {
         let now = Date()
         let pass = WidgetPassStore.read(at: now)
-        var entries = [PassEntry(date: now, pass: pass)]
+        let appearance = WidgetPassStore.readAppearance()
+        var entries = [PassEntry(date: now, pass: pass, appearance: appearance)]
         if let pass = pass {
             // The expired entry contains no image. WidgetKit changes the
             // presentation at expiry without needing to open the application.
-            entries.append(PassEntry(date: pass.expiry, pass: nil))
+            entries.append(PassEntry(date: pass.expiry, pass: nil, appearance: appearance))
         }
         completion(Timeline(entries: entries, policy: .never))
     }
@@ -30,8 +33,8 @@ struct PassTimelineProvider: TimelineProvider {
 
 struct PassWidgetView: View {
     let entry: PassEntry
-    private let ink = Color(red: 17/255, green: 19/255, blue: 24/255)
-    private let lime = Color(red: 141/255, green: 248/255, blue: 107/255)
+    private var background: Color { Color(uiColor: WidgetAppearance.uiColor(entry.appearance.background)) }
+    private var textColor: Color { Color(uiColor: entry.appearance.textColor) }
 
     @ViewBuilder
     private func qrImage(_ image: UIImage) -> some View {
@@ -51,34 +54,39 @@ struct PassWidgetView: View {
                 Spacer()
                 Image(systemName: "house.fill").font(.system(size: 12))
             }
-            .foregroundStyle(lime)
-            if let pass = entry.pass, pass.isValid(at: entry.date),
-               let image = WidgetPassStore.qrTile(pass.image) {
+            .foregroundStyle(textColor)
+            if entry.appearance.content == "qr",
+               let pass = entry.pass, pass.isValid(at: entry.date),
+               let image = WidgetPassStore.qrTile(pass.image, appearance: entry.appearance) {
                 qrImage(image)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .privacySensitive()
                     .accessibilityLabel("QR-пропуск")
+            } else if let logo = UIImage(named: "WidgetLogo") {
+                qrImage(logo)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityLabel("Логотип School 21")
+            }
+            if let pass = entry.pass, pass.isValid(at: entry.date) {
                 if let expiry = pass.expiresOn {
-                    Text("До \(Date(timeIntervalSince1970: Double(expiry)/1000).formatted(date: .numeric, time: .omitted))")
-                        .font(.system(size: 11)).foregroundStyle(.white.opacity(0.8))
+                    Text("До \(Date(timeIntervalSince1970: Double(expiry) / 1000).formatted(date: .numeric, time: .omitted))")
+                        .font(.system(size: 11)).foregroundStyle(textColor)
                 } else {
-                    Text("Временный QR").font(.system(size: 11)).foregroundStyle(.white.opacity(0.8))
+                    Text("Нажмите, чтобы открыть QR")
+                        .font(.system(size: 11)).foregroundStyle(textColor)
                 }
             } else {
-                Spacer()
-                Image(systemName: "qrcode").font(.system(size: 56)).foregroundStyle(lime)
                 Text("Обновите QR в приложении")
-                    .font(.system(size: 16, weight: .medium))
-                    .multilineTextAlignment(.center).foregroundStyle(.white)
-                Spacer()
+                    .font(.system(size: 13, weight: .medium))
+                    .multilineTextAlignment(.center).foregroundStyle(textColor)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
-        .background(ink)
+        .background(background)
         .widgetURL(WidgetPassStore.openPassURL)
-        .containerBackground(ink, for: .widget)
+        .containerBackground(background, for: .widget)
     }
 }
 

@@ -11,7 +11,6 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.provider.Settings
-import android.view.View
 import android.widget.RemoteViews
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -66,6 +65,7 @@ class PassWidgetProvider : AppWidgetProvider() {
             val manager = AppWidgetManager.getInstance(context)
             val ids = manager.getAppWidgetIds(component(context))
             val pass = PassWidgetStore.read(context)
+            val appearance = WidgetAppearanceStore.read(context)
             for (id in ids) {
                 val views = RemoteViews(context.packageName, R.layout.pass_widget)
                 val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -77,25 +77,35 @@ class PassWidgetProvider : AppWidgetProvider() {
                     )
                 }
                 views.setOnClickPendingIntent(R.id.widget_root, open)
-                views.setViewVisibility(R.id.widget_qr, if (pass != null) View.VISIBLE else View.GONE)
-                views.setViewVisibility(R.id.widget_empty, if (pass == null) View.VISIBLE else View.GONE)
-                if (pass != null) {
-                    val options = BitmapFactory.Options().apply {
-                        inJustDecodeBounds = true
-                    }
+                views.setInt(R.id.widget_root, "setBackgroundColor", appearance.background)
+                views.setTextColor(R.id.widget_title, appearance.textColor)
+                views.setTextColor(R.id.widget_status, appearance.textColor)
+                views.setInt(R.id.widget_qr, "setBackgroundColor", appearance.background)
+                views.setContentDescription(R.id.widget_qr,
+                    if (appearance.content == "qr" && pass != null) "QR-пропуск" else "Логотип School 21")
+                if (appearance.content == "qr" && pass != null) {
+                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     BitmapFactory.decodeByteArray(pass.image, 0, pass.image.size, options)
                     var sample = 1
                     while (maxOf(options.outWidth, options.outHeight) / sample > 512) sample *= 2
                     options.inJustDecodeBounds = false
                     options.inSampleSize = sample
-                    val bitmap = BitmapFactory.decodeByteArray(pass.image, 0, pass.image.size, options)
-                    views.setImageViewBitmap(R.id.widget_qr, bitmap)
+                    val source = BitmapFactory.decodeByteArray(pass.image, 0, pass.image.size, options)
+                    if (source != null) {
+                        views.setImageViewBitmap(R.id.widget_qr, appearance.colorQr(source))
+                    } else {
+                        views.setImageViewResource(R.id.widget_qr, R.drawable.widget_logo)
+                    }
+                } else {
+                    views.setImageViewResource(R.id.widget_qr, R.drawable.widget_logo)
+                }
+                if (pass != null) {
                     val status = if (!Settings.canDrawOverlays(context)) "Разрешите показ поверх экрана"
                         else if (pass.expiresOn != null) "До " + SimpleDateFormat("dd.MM", Locale.getDefault()).format(Date(pass.expiresOn))
                         else "Нажмите, чтобы увеличить"
                     views.setTextViewText(R.id.widget_status, status)
                 } else {
-                    views.setTextViewText(R.id.widget_status, "Нажмите, чтобы обновить")
+                    views.setTextViewText(R.id.widget_status, "Обновите QR в приложении")
                 }
                 manager.updateAppWidget(id, views)
             }

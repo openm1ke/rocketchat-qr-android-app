@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:campus_pass/home_screen_widgets.dart';
+import 'package:campus_pass/widget_appearance.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -126,6 +127,41 @@ void main() {
         WidgetPass.fromMessage({'image': 'not bytes', 'expiresAt': 1}),
         isNull,
       );
+    },
+  );
+
+  test(
+    'appearance defaults and saves are independent of pass updates and expiry',
+    () async {
+      Map<Object?, Object?>? settings;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        if (call.method == 'saveAppearance') settings = call.arguments as Map;
+        if (call.method == 'readAppearance') return settings;
+        return null;
+      });
+      final widgets = HomeScreenWidgets(channel: channel);
+      final defaults = await widgets.readAppearance();
+      expect(defaults.content, WidgetContent.logo);
+      expect(defaults.background.toARGB32(), 0xff000000);
+      final appearance = defaults.copyWith(content: WidgetContent.qr);
+      await widgets.saveAppearance(appearance);
+      await widgets.publish(
+        WidgetPass(
+          image: Uint8List.fromList([1]),
+          expiresAt: DateTime.now().add(const Duration(hours: 1)),
+        ),
+      );
+      await widgets.clear();
+      final restored = await widgets.readAppearance();
+      expect(restored.toMessage(), appearance.toMessage());
+      expect(calls.map((call) => call.method), [
+        'readAppearance',
+        'saveAppearance',
+        'publish',
+        'clear',
+        'readAppearance',
+      ]);
     },
   );
 }

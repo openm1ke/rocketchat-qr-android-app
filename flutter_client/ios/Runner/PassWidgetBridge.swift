@@ -27,6 +27,15 @@ final class PassWidgetBridge {
     private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         do {
             switch call.method {
+            case "readAppearance":
+                result(WidgetPassStore.readAppearance().message)
+            case "saveAppearance":
+                guard let args = call.arguments as? [String: Any] else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                try WidgetPassStore.saveAppearance(WidgetAppearance(message: args))
+                WidgetCenter.shared.reloadTimelines(ofKind: WidgetPassStore.kind)
+                result(nil)
             case "takeWidgetTap":
                 let tapped = Self.pendingWidgetTap
                 Self.pendingWidgetTap = false

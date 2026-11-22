@@ -24,3 +24,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/token_guide/
+    - assets/branding/widget_logo.png
